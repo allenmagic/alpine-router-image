@@ -17,7 +17,7 @@ Alpine 路由 VM 镜像生产仓库：CI 构建 Alpine rootfs（构建链移植�
 
 ```bash
 # 1. 构建 Alpine rootfs（产物 build/alpine/alpine-rootfs-minimal.tar.xz）
-ARCH=x86_64 PACK=1 sudo -E bash alpine/build.sh
+ARCH=x86_64 PACK=1 sudo -E bash distros/alpine/build.sh
 
 # 2. 装配 VM 镜像（下载官方三件套 + initrd 注入 ext4 + rootfs 装配 + qcow2）
 ./image/assemble.sh build/alpine/alpine-rootfs-minimal.tar.xz dist

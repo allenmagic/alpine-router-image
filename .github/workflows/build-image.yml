@@ -39,8 +39,8 @@ jobs:
       - name: Build rootfs (alpine / base / x86_64)
         run: |
           set -euo pipefail
-          chmod +x alpine/build.sh
-          sudo -E bash -x alpine/build.sh
+          chmod +x distros/alpine/build.sh
+          sudo -E bash -x distros/alpine/build.sh
 
       - name: Locate rootfs artifact
         id: artifact
