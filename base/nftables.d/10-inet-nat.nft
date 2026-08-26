@@ -1,0 +1,46 @@
+table inet nat {
+    # ==============================================================================
+    # 集合定义
+    # ==============================================================================
+    set lan_interfaces {
+        type ifname;
+        elements = $LAN_IFS_LIST;
+    }
+
+    set wan_interfaces {
+        type ifname;
+        elements = $WAN_IFS_LIST;
+    }
+
+    set vpn_interfaces {
+        type ifname;
+        elements = $VPN_IFS_LIST;
+    }
+
+    set tun_interfaces {
+        type ifname;
+        elements = $TUN_IFS_LIST;
+    }
+
+    # ============================================================
+    # PREROUTING 链 (DNAT - 端口转发)
+    # ============================================================
+    chain prerouting {
+        type nat hook prerouting priority dstnat; policy accept;
+        ip saddr $PROXY_SERVER_IP return;
+        ip daddr $PROXY_SERVER_IP return;
+    }
+
+    # ============================================================
+    # POSTROUTING 链 (SNAT - 共享上网)
+    # ============================================================
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+
+        #---------------------- WAN 口上网 NAT (仅限 IPv4) -------------------------
+        meta nfproto ipv4 oifname @wan_interfaces masquerade;
+
+        #---------------------- VPN 访问内网 NAT (仅限 IPv4) -----------------------
+        meta nfproto ipv4 iifname @vpn_interfaces oifname @lan_interfaces masquerade;
+    }
+}

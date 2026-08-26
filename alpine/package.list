@@ -1,0 +1,32 @@
+# ============================================================
+# Alpine Linux 包列表
+#
+# 语法：
+#   [pm] <package>                —— 包管理器安装（apk add）
+#   [dl@<url>] <binary_name>      —— 下载 URL 到 /usr/local/bin/<binary_name>
+#
+# 三段式：base / sing-box / landscape
+# ============================================================
+
+# ========== base ==========
+[pm] openssh
+[pm] chrony
+[pm] curl
+[pm] bash
+[pm] nano
+[pm] kmod
+[pm] iproute2
+[pm] rsync
+[pm] util-linux
+[pm] tzdata
+[pm] busybox-openrc
+[pm] dnsmasq
+[pm] nftables
+[pm] tailscale
+[pm] fastfetch
+[dl@https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64] cloudflared
+
+# ========== sing-box ==========
+[pm] sing-box
+
+# ========== landscape ==========

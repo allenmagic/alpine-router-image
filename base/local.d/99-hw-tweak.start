@@ -1,0 +1,13 @@
+#!/bin/sh
+
+# 1. 开启 UDP GRO 转发优化 (针对高带宽流媒体转发)
+ethtool -K eth0 rx-udp-gro-forwarding on 2>/dev/null
+ethtool -K eth1 rx-udp-gro-forwarding on 2>/dev/null
+
+# 2. 启用多核中断 RPS 掩码 (4核心全开)
+for x in /sys/class/net/eth*/queues/rx-*/rps_cpus; do echo "f" > "$x"; done
+
+# 3. 设置 CPU 为调度优化模式 (Schedutil 兼顾性能与功耗)
+for i in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do 
+    [ -f "$i" ] && echo "schedutil" > "$i"
+done

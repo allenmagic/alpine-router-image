@@ -1,0 +1,5 @@
+# Put your Tailscale auth key (tskey-...) here.
+#
+# This file is intentionally NOT used by default.
+# Recommended: inject the key via CI (GitHub Actions secret) to /etc/tailscale/authkey.
+

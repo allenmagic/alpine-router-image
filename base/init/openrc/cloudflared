@@ -1,0 +1,22 @@
+#!/sbin/openrc-run
+
+name=$RC_SVCNAME
+description="Cloudflare Tunnel"
+
+command="/usr/local/bin/cloudflared"
+command_args="--no-autoupdate tunnel run"
+command_background="yes"
+pidfile="/var/run/$name.pid"
+output_log="/var/log/$name.log"
+error_log="/var/log/$name.log"
+
+depend() {
+    need net
+    after firewall
+    use logger dns
+}
+
+# Token 从 /etc/cloudflared/config.yml 读取，不在脚本中硬编码
+# start_pre() {
+#     checkpath -f /etc/cloudflared/config.yml || return 1
+# }

@@ -1,0 +1,199 @@
+table inet filter {
+    # ===============================================================================================
+    # 定义集合变量：LAN_IFS_LIST/WAN_IFS_LIST/VPN_IFS_LIST/TUN_IFS_LIST变量在00-inet-vars.nft中定义
+    # ===============================================================================================
+    set lan_interfaces {
+        type ifname;
+        elements = $LAN_IFS_LIST;
+    }
+
+    set wan_interfaces {
+        type ifname;
+        elements = $WAN_IFS_LIST;
+    }
+
+    set vpn_interfaces {
+         type ifname;
+         elements = $VPN_IFS_LIST;
+    }
+
+    set tun_interfaces {
+        type ifname;
+        elements = $TUN_IFS_LIST;
+    }
+
+    # ========= 动态黑名单 (分离 IPv4/IPv6) =========
+    set flood_blacklist_v4 {
+        type ipv4_addr;
+        flags dynamic, timeout;
+        timeout 1h;
+    }
+
+    set flood_blacklist_v6 {
+        type ipv6_addr;
+        flags dynamic, timeout;
+        timeout 1h;
+    }
+
+    flowtable f {
+        hook ingress priority 0;
+        devices = { $WAN, $LAN };
+    }
+
+    # ============================================================
+    # INPUT链 (控制面板), 主要处理入站路由器的连接请求
+    # ============================================================
+    chain input {
+        type filter hook input priority filter; policy drop;
+
+        # ------------------ 允许回环 ----------------------
+        iif lo accept;
+
+        # --------------- 允许已建立的连接 -------------------
+        ct state established,related accept;
+
+        # ------------------ 丢弃无效连接 --------------------
+        ct state invalid drop;
+
+        # --------------- 丢弃动态黑名单的连接 -----------------
+        iifname @wan_interfaces ip saddr @flood_blacklist_v4 drop;
+        iifname @wan_interfaces ip6 saddr @flood_blacklist_v6 drop;
+
+        # --------------- WAN 请求连接 ------------------------
+        # 允许 WireGuard/Tailscale 的 UDP 握手包建立隧道
+        iifname @wan_interfaces udp dport $WG_PORT accept;
+        iifname @wan_interfaces udp dport $TS_PORT accept;
+
+        # 超限流量：记录日志并加入黑名单后丢弃
+        iifname @wan_interfaces ct state new tcp flags syn \
+            tcp dport != { $WG_PORT, $TS_PORT } \
+            limit rate over 100/second burst 200 packets \
+            log prefix "WAN_SYN_FLOOD_v4: " \
+            add @flood_blacklist_v4 { ip saddr } \
+            drop;
+
+        iifname @wan_interfaces ct state new tcp flags syn \
+            limit rate over 100/second burst 200 packets \
+            log prefix "WAN_SYN_FLOOD_v6: " \
+            add @flood_blacklist_v6 { ip6 saddr } \
+            drop;
+
+        # ========= ICMP 控制面板 (IPv4 / IPv6) =========
+        # --------------- IPv4 ICMP  -----------------------
+        # 分别为每个 ICMP 类型添加限速
+        iifname @wan_interfaces icmp type { 
+            echo-request, 
+            destination-unreachable, 
+            time-exceeded, 
+            parameter-problem 
+        } limit rate 5/second burst 10 packets accept;
+
+        # ---------------- Tailscale ICMP -----------------------
+        ip saddr $TS_NET icmp type { 
+            echo-request, 
+            destination-unreachable, 
+            time-exceeded, 
+            parameter-problem 
+        } limit rate 5/second burst 10 packets accept;
+
+        # ---------------- IPv6 ICMP -----------------------
+        # 分别为每个 ICMP 类型添加限速
+        iifname @wan_interfaces icmpv6 type { 
+            echo-request, 
+            destination-unreachable, 
+            time-exceeded, 
+            parameter-problem 
+        } limit rate 5/second burst 10 packets accept;
+
+        # ---------------- IPv6 邻居发现  ---------------------
+        iifname @wan_interfaces meta l4proto ipv6-icmp icmpv6 type {
+            nd-router-solicit,
+            nd-router-advert,
+            nd-neighbor-solicit,
+            nd-neighbor-advert
+        } accept;
+
+        # ---------------- SSH 管理 ( LAN / VPN / TUN / Tailscale ) --------------
+        iifname @lan_interfaces tcp dport $SSH_PORT ct state new limit rate 30/minute burst 20 packets accept;
+        iifname @tun_interfaces tcp dport $SSH_PORT ct state new limit rate 30/minute burst 20 packets accept;
+        iifname @vpn_interfaces tcp dport $SSH_PORT ct state new limit rate 60/minute burst 30 packets accept;
+
+        # ----------------  DHCP  -----------------------------
+        iifname @lan_interfaces udp dport { 67, 68 } accept;
+
+        # -------------------  DNS  ---------------------------
+        iifname @lan_interfaces udp dport $DNS_PORT accept;
+        iifname @tun_interfaces udp dport $DNS_PORT accept;
+        iifname @lan_interfaces tcp dport $DNS_PORT accept;
+        iifname @tun_interfaces tcp dport $DNS_PORT accept;
+
+        # ------------------  ICMP (LAN)  ---------------------
+        iifname @lan_interfaces icmp type {
+            echo-request,
+            destination-unreachable,
+            time-exceeded,
+            parameter-problem
+        } accept;
+
+        # ------------------  ICMP (LAN)  ---------------------
+        iifname @tun_interfaces icmp type {
+            echo-request,
+            destination-unreachable,
+            time-exceeded,
+            parameter-problem
+        } accept;
+
+        # ------------------ 流量放行上网 ------------------------
+        iifname @vpn_interfaces accept;
+        iifname @tun_interfaces accept;
+        iifname @lan_interfaces accept;
+
+        log prefix "INPUT_DROP: " limit rate 10/minute drop;
+    }
+
+    # ============================================================
+    # FORWARD 链 (数据面板)， 主要处理路由转发的数据包
+    # ============================================================
+    chain forward {
+        type filter hook forward priority filter; policy drop;
+
+        # ------------------- 流量卸载加速 -----------------------
+        ip protocol { tcp, udp } flow offload @f;
+
+        # ------------------- Baseline -------------------------
+        ct state established,related accept;
+        ct state invalid drop;
+
+        # -------------------- MSS Clamping ---------------------
+        tcp flags syn tcp option maxseg size set rt mtu;
+
+        # --------------------- LAN -> TUN 转发 -----------------
+        iifname @lan_interfaces oifname @tun_interfaces accept;
+
+        # --------------------- TUN -> WAN 转发 -----------------
+        iifname @tun_interfaces oifname @wan_interfaces accept;
+
+        # --------------------- TUN -> LAN 转发 -----------------
+        iifname @tun_interfaces oifname @lan_interfaces accept;
+
+        # --------------------- Tailscale -> TUN 转发 ------------
+        ip saddr $TS_NET oifname @tun_interfaces accept;
+
+        # --------------------- LAN -> LAN 转发 -----------------
+        iifname @lan_interfaces oifname @lan_interfaces accept;
+
+        # ---------------------- VPN Routing --------------------
+        iifname @vpn_interfaces oifname @lan_interfaces accept;
+        iifname @lan_interfaces oifname @vpn_interfaces accept;
+
+        log prefix "FORWARD_DROP: " limit rate 10/minute drop;
+    }
+
+    # ============================================================
+    # OUTPUT 链， 主要处理出站连接请求
+    # ============================================================
+    chain output {
+        type filter hook output priority filter; policy accept;
+        log prefix "OUTPUT_NEW: " ct state new limit rate 5/minute accept;
+    }
+}

@@ -1,0 +1,13 @@
+# Here is an example of different families, hooks and priorities in the
+# nftables framework, all mixed together.
+#
+# more examples are located in files/examples in nftables source.
+# For up-to-date information please visit https://wiki.nftables.org
+#
+# This script is meant to be loaded with `nft -f <file>`
+
+# 1. 清空规则
+flush ruleset;
+
+# 2. 加载变量
+include "/etc/nftables.d/*.nft"

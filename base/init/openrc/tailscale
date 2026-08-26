@@ -1,0 +1,18 @@
+#!/sbin/openrc-run
+
+name=$RC_SVCNAME
+description="Tailscale agent"
+
+command="/usr/local/bin/tailscaled"
+command_background="yes"
+pidfile="/var/run/$name.pid"
+
+depend() {
+    need net
+    after firewall
+    use logger
+}
+
+start_pre() {
+    mkdir -p /var/lib/tailscale /run/tailscale
+}

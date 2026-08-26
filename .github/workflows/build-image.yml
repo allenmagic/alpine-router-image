@@ -1,0 +1,82 @@
+name: Build Alpine Router VM Image
+
+# 手动触发：构建 Alpine rootfs（移植自 nanopi-r3s-rootfs，单一发行版链）
+# + 装配可启动 VM 镜像（Alpine 官方 virt 三件套）→ 上传 release asset
+#
+# 产物（tag: alpine-router-image-YYYYMMDD）：
+#   alpine-router-rootfs.qcow2  VM 根磁盘（ext4 内含 rootfs + modloop 模块）
+#   vmlinuz-virt / initrd       客户机内核与 initramfs（注入 ext4 依赖链）
+#   SHA256SUMS                  qnap-nixos-nas 的 fetchurl sha256 来源
+#
+# 注：不使用 CI secrets 注入密钥——密钥由 NAS 宿主的 alpine-router-deploy
+# 在部署时注入，绝不进入公开 release 产物。
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  ARCH: x86_64
+  INFRA: base
+  PACK: "1"
+  HOSTNAME_VAL: alpine-router
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install host build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            xz-utils file curl ca-certificates wget \
+            cpio gzip squashfs-tools kmod e2fsprogs qemu-utils fakeroot
+
+      - name: Build rootfs (alpine / base / x86_64)
+        run: |
+          set -euo pipefail
+          chmod +x alpine/build.sh
+          sudo -E bash -x alpine/build.sh
+
+      - name: Locate rootfs artifact
+        id: artifact
+        run: |
+          f="$(ls -1 build/alpine/alpine-rootfs-minimal.tar.xz 2>/dev/null \
+               || ls -1 build/alpine/*-rootfs-minimal.tar.* 2>/dev/null \
+               || ls -1 build/alpine/*.tar.* 2>/dev/null | head -n1)"
+          if [ -z "${f:-}" ] || [ ! -e "$f" ]; then
+            echo "未找到 rootfs 产物" >&2
+            ls -lR build/alpine || true
+            exit 1
+          fi
+          echo "path=$f" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble VM image (virt 三件套 + rootfs → qcow2)
+        run: |
+          set -euo pipefail
+          chmod +x image/assemble.sh image/assemble-rootfs.sh
+          bash image/assemble.sh "${{ steps.artifact.outputs.path }}" dist
+
+      - name: Resolve tag
+        id: tag
+        run: echo "tag=alpine-router-image-$(date +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Create / Update Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          files: |
+            dist/vmlinuz-virt
+            dist/initrd
+            dist/alpine-router-rootfs.qcow2
+            dist/SHA256SUMS
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

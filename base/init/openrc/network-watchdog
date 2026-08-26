@@ -1,0 +1,14 @@
+#!/sbin/openrc-run
+
+name=$RC_SVCNAME
+description="Network watchdog - monitors WAN/LAN connectivity and restarts services on failure"
+
+command="/usr/local/bin/network-watchdog"
+command_args="daemon-start"
+pidfile="/var/run/network-watchdog.pid"
+
+depend() {
+    need net
+    after nftables dnsmasq
+    use logger
+}
