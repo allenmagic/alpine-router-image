@@ -1,28 +1,25 @@
 # 1. 基础接口定义 (单体)
-# 占位符由 network.sh 在部署时替换
+# 占位符由 Nix 构建时替换（modules/virtualization/alpine-router.nix）
+# 注：WireGuard 已移除，VPN 入口统一走 Tailscale（含自建 Headscale 控制端）
 define WAN = __WAN_IFACE__
 define LAN = __LAN_IFACE__
-define WG = wg0
 define TS = { ts0, tailscale0 }
 define TUN = tun0
 
 # 2. 端口与网段定义
-define WG_PORT = 51820
 define TS_PORT = { 41641, 41642 }
 define SSH_PORT = 22
 define DNS_PORT = 53
-define WG_IP = 10.10.10.2
 define ROUTER_LAN_IP = __ROUTER_LAN_IP__
 define PROXY_SERVER_IP = 192.168.8.180
 define LAN_NET = __LAN_NET__
 define TS_NET = 100.64.0.0/10
-define WG_NET = 10.10.10.0/24
-define VPN_NETS = { $TS_NET, $WG_NET }
+define VPN_NETS = { $TS_NET }
 
 # 3. 定义接口列表 (数组)
 define WAN_IFS_LIST = { $WAN }
 define LAN_IFS_LIST = { $LAN }
-define VPN_IFS_LIST = { $WG, $TS }
+define VPN_IFS_LIST = { $TS }
 define TUN_IFS_LIST = { $TUN }
 
 # 4. 定义代理相关参数

@@ -5,6 +5,7 @@ description="Network watchdog - monitors WAN/LAN connectivity and restarts servi
 
 command="/usr/local/bin/network-watchdog"
 command_args="daemon-start"
+command_background="yes"
 pidfile="/var/run/network-watchdog.pid"
 
 depend() {

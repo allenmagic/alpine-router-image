@@ -60,13 +60,12 @@ table inet filter {
         iifname @wan_interfaces ip6 saddr @flood_blacklist_v6 drop;
 
         # --------------- WAN 请求连接 ------------------------
-        # 允许 WireGuard/Tailscale 的 UDP 握手包建立隧道
-        iifname @wan_interfaces udp dport $WG_PORT accept;
+        # 允许 Tailscale 的 UDP 握手包建立隧道
         iifname @wan_interfaces udp dport $TS_PORT accept;
 
         # 超限流量：记录日志并加入黑名单后丢弃
+        # （v4/v6 规则一致，直接按新建 TCP SYN 限流；WG/TS 是 UDP 端口，不参与 TCP 规则）
         iifname @wan_interfaces ct state new tcp flags syn \
-            tcp dport != { $WG_PORT, $TS_PORT } \
             limit rate over 100/second burst 200 packets \
             log prefix "WAN_SYN_FLOOD_v4: " \
             add @flood_blacklist_v4 { ip saddr } \

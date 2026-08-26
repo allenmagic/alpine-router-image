@@ -3,7 +3,7 @@
 name=$RC_SVCNAME
 description="Tailscale agent"
 
-command="/usr/local/bin/tailscaled"
+command="/usr/sbin/tailscaled"
 command_background="yes"
 pidfile="/var/run/$name.pid"
 

@@ -1,0 +1,22 @@
+#!/sbin/openrc-run
+# 自定义 sysctl 服务（覆盖 Alpine 默认 /etc/init.d/sysctl）：
+#   - 显式依赖 modules，保证 tcp_bbr/sch_fq/nf_conntrack 等模块已加载后再应用参数
+#   - 用 -e 忽略不存在的键（busybox sysctl 不支持 systemd-sysctl 的 "-" 前缀语法）
+
+description="Configure kernel parameters"
+
+depend() {
+    after clock modules
+    before bootmisc logger
+    keyword -prefix -systemd-nspawn -vserver
+}
+
+start() {
+    ebegin "Configuring kernel parameters"
+    local f
+    for f in /etc/sysctl.d/*.conf; do
+        [ -f "$f" ] && sysctl -e -p "$f"
+    done
+    [ -f /etc/sysctl.conf ] && sysctl -e -p /etc/sysctl.conf
+    eend 0
+}

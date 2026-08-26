@@ -1,9 +1,9 @@
 {
   "version": "alpha0",
   "authKey": "file:/etc/tailscale/authkey",
-  "hostname": "r3s-alpine-router-bj",
-  "acceptRoutes": false,
+  "hostname": "__TS_HOSTNAME__",
+  "acceptRoutes": true,
   "acceptDNS": false,
   "netfilterMode": "off",
-  "advertiseRoutes": []
+  "advertiseRoutes": [__TS_ADVERTISE_ROUTES__]
 }

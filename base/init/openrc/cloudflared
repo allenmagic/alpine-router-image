@@ -4,7 +4,7 @@ name=$RC_SVCNAME
 description="Cloudflare Tunnel"
 
 command="/usr/local/bin/cloudflared"
-command_args="--no-autoupdate tunnel run"
+command_args="--no-autoupdate --config /etc/cloudflared/config.yml tunnel run"
 command_background="yes"
 pidfile="/var/run/$name.pid"
 output_log="/var/log/$name.log"

@@ -28,8 +28,8 @@ EOF
 
 # 通用占位符替换（所有 distro 共用逻辑）
 _replace_placeholders() {
-    # dnsmasq DHCP 配置
-    for _f_ in /etc/dnsmasq.d/*.conf; do
+    # dnsmasq 配置（主配置的 interface=__LAN_IFACE__ + 模块化 DHCP 配置）
+    for _f_ in /etc/dnsmasq.conf /etc/dnsmasq.d/*.conf; do
         [ -f "${_f_}" ] || continue
         sed -i \
             -e "s|__LAN_IFACE__|${LAN_IFACE}|g" \
@@ -50,5 +50,13 @@ _replace_placeholders() {
             -e "s|__ROUTER_LAN_IP__|${LAN_IP}|g" \
             -e "s|__LAN_NET__|${LAN_NETWORK}|g" \
             "${_NFT}"
+    fi
+    # tailscale（hostname 与通告路由）
+    _TS="/etc/tailscale/config.json"
+    if [ -f "${_TS}" ]; then
+        sed -i \
+            -e "s|__TS_HOSTNAME__|${TS_HOSTNAME}|g" \
+            -e "s|__TS_ADVERTISE_ROUTES__|\"${TS_ADVERTISE_ROUTES}\"|g" \
+            "${_TS}"
     fi
 }
