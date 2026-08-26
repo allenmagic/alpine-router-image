@@ -25,8 +25,9 @@ VMLINUZ_SHA256="1e6bf9027720c75c3ed0d79171f21b5791ee40ca9795d07c7c6e04dc5ea2ae90
 INITRAMFS_SHA256="6d80a739fedeeb6cd63e24dd208845e22199c41a5fb2054941ef61ec30264fa9"
 MODLOOP_SHA256="78907e7cc812d555f08d4e1133d090cf11fa197370882adfe67b0a5986ccb3f9"
 
-ROOTFS_TARBALL="${1:?用法: assemble.sh <rootfs-tarball> [output-dir]}"
-OUT_DIR="${2:-dist}"
+# 转绝对路径：assemble-rootfs.sh 会 cd 到 mktemp 目录，相对路径会失效
+ROOTFS_TARBALL="$(readlink -f "${1:?用法: assemble.sh <rootfs-tarball> [output-dir]}")"
+OUT_DIR="$(readlink -f "${2:-dist}")"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p "$OUT_DIR"
