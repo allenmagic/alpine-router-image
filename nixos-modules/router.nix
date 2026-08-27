@@ -94,6 +94,16 @@ in
       '';
     };
 
+    vcpus = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 2;
+      description = ''
+        vCPU 总数：vcpu0 独占隔离核（affinity pin 到 `cpu`），
+        其余 vCPU 由宿主调度器在非隔离核上动态调度。
+        N5095（4 核）如设 3 则为 1 独占 + 2 动态（宿主剩 1 核）。
+      '';
+    };
+
     mem = lib.mkOption {
       type = lib.types.ints.positive;
       default = 512;
@@ -163,7 +173,7 @@ in
       config = {
         microvm.hypervisor = "cloud-hypervisor";
 
-        microvm.vcpu = 2;   # vcpu0 独占隔离核；vcpu1 动态
+        microvm.vcpu = cfg.vcpus;   # vcpu0 独占隔离核；其余动态
         microvm.mem = cfg.mem;
 
         # 动态内存：virtio-balloon（CH 要求 128M 对齐粒度）。
