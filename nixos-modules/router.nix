@@ -128,9 +128,69 @@ in
       default = "br-lan";
       description = "LAN 侧宿主网桥（tap 自动挂入）";
     };
+
+    vmIp = lib.mkOption {
+      type = lib.types.str;
+      default = "192.168.8.1";
+      description = "VM LAN 口 IP（deploy 脚本的 ssh 目标）。与 network.env 和宿主 bridges 配置保持一致。";
+    };
   };
 
   config = lib.mkIf cfg.enable {
+    # ---- deploy（密钥注入） ----
+    # 密钥注入器资产（install.sh + lib/secrets.sh）打包为 tarball；
+    # 真实密钥在宿主的 /etc/libvirt/alpine-router.env（600 权限，git 外）
+    environment.etc."libvirt/alpine-router-deploy.tar.gz".source =
+      pkgs.runCommand "alpine-router-deploy.tar.gz" { } ''
+        tar czf $out -C ${../deploy-assets} .
+      '';
+
+    # 密钥模板：宿主侧 sudo cp 后填真实值（chmod 600）
+    environment.etc."libvirt/alpine-router.env.example".source =
+      ../deploy-assets/env.example;
+
+    environment.systemPackages = [
+      (pkgs.writeShellScriptBin "alpine-router-deploy" ''
+        #!/bin/sh
+        set -e
+
+        VM_IP="${cfg.vmIp}"
+        DEPLOY_PKG="/etc/libvirt/alpine-router-deploy.tar.gz"
+        ENV_FILE="/etc/libvirt/alpine-router.env"
+
+        echo "Deploying Alpine Router secrets..."
+
+        # 检查 VM 是否在线
+        if ! ping -c 1 -W 2 "$VM_IP" >/dev/null 2>&1; then
+          echo "Error: VM is offline or not reachable at $VM_IP"
+          exit 1
+        fi
+
+        # 传输部署包
+        echo "Uploading deployment package..."
+        scp "$DEPLOY_PKG" "root@$VM_IP:/tmp/alpine-router-deploy.tar.gz"
+
+        # 可选：传输密钥 env 文件（不存在则无密钥部署）
+        if [ -f "$ENV_FILE" ]; then
+          echo "Uploading env file (secrets)..."
+          scp "$ENV_FILE" "root@$VM_IP:/tmp/alpine-router.env"
+        else
+          echo "Note: $ENV_FILE not found, deploying without secrets"
+        fi
+
+        # 执行注入脚本（结束后清理 /tmp 中的 tarball 和明文密钥 env 文件，保留退出码）
+        echo "Running install.sh on VM..."
+        ssh "root@$VM_IP" 'rm -rf /tmp/alpine-router-deploy && mkdir -p /tmp/alpine-router-deploy && cd /tmp/alpine-router-deploy && tar xzf /tmp/alpine-router-deploy.tar.gz && if [ -f /tmp/alpine-router.env ]; then mv /tmp/alpine-router.env ./env; fi; sh install.sh; _rc=$?; rm -f /tmp/alpine-router-deploy.tar.gz /tmp/alpine-router.env; exit $_rc'
+
+        echo "Deployment complete!"
+      '')
+
+      (pkgs.writeShellScriptBin "alpine-router-shell" ''
+        #!/bin/sh
+        # 快速连接到 Alpine Router VM
+        ssh root@${cfg.vmIp} "$@"
+      '')
+    ];
     # CPU 独占：指定核隔离给路由器 VM（宿主调度器不再使用该核）
     boot.kernelParams = [ "isolcpus=${toString cfg.cpu}" "rcu_nocbs=${toString cfg.cpu}" ];
 
