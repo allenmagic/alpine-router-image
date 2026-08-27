@@ -131,7 +131,7 @@ in
 
     vmIp = lib.mkOption {
       type = lib.types.str;
-      default = "192.168.8.1";
+      default = "192.168.10.1";
       description = "VM LAN 口 IP（deploy 脚本的 ssh 目标）。与 network.env 和宿主 bridges 配置保持一致。";
     };
   };

@@ -14,8 +14,8 @@ dnsmasq 仅用于 LAN 的 DHCP 分配，DNS 解析由 sing-box 提供。
 ## DHCP 行为（基于 00-base.conf）
 - **权威 DHCP**: `dhcp-authoritative` 加速客户端获取 IP。
 - **地址池**: `192.168.10.100-192.168.10.200`，租期 24 小时。
-- **下发网关**: `dhcp-option=option:router,192.168.8.1`。
-- **下发 DNS**: `dhcp-option=option:dns-server,192.168.8.1`（DNS 实际由 sing-box 监听 53）。
+- **下发网关**: `dhcp-option=option:router,192.168.10.1`。
+- **下发 DNS**: `dhcp-option=option:dns-server,192.168.10.1`（DNS 实际由 sing-box 监听 53）。
 - **租约文件**: `/var/lib/misc/dnsmasq.leases`。
 
 ## 约定

@@ -17,7 +17,7 @@ set -e
 # ==================== 配置 ====================
 WAN_IF="${WAN_IF:-eth0}"
 LAN_IF="${LAN_IF:-eth1}"
-LAN_IP="${LAN_IP:-192.168.8.1}"
+LAN_IP="${LAN_IP:-192.168.10.1}"
 
 PING_TARGET="223.5.5.5"
 PING_COUNT=3
@@ -44,7 +44,7 @@ check_and_restart() {
     fi
 
     # 检测 LAN（检查接口是否有配置的 IP）
-    # 注意锚定 "/"，避免 192.168.8.1 误匹配 192.168.8.10/192.168.8.100
+    # 注意锚定 "/"，避免 192.168.10.1 误匹配 192.168.10.10/192.168.10.100
     if ip addr show "$LAN_IF" 2>/dev/null | grep -q "inet ${LAN_IP}/"; then
         lan_ok=1
     fi
