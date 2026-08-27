@@ -80,3 +80,22 @@ jobs:
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # release 资产就位后，把 tag+sha256 同步进 nixos-modules/router.nix 并提交
+      # （消费端升级只需 nix flake update）。幂等：同日重跑值不变则跳过提交。
+      # push 不会循环触发本 workflow（仅 workflow_dispatch）。
+      - name: Sync flake checksums
+        run: |
+          set -euo pipefail
+          python3 image/sync-flake-sha.py \
+            dist/SHA256SUMS nixos-modules/router.nix "${{ steps.tag.outputs.tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "sha256 无变化（同日重复构建），跳过提交"
+          else
+            git add nixos-modules/router.nix
+            git commit -m "ci: sync release checksums to ${{ steps.tag.outputs.tag }}"
+            git push
+            echo "flake checksums 已同步并推送"
+          fi
