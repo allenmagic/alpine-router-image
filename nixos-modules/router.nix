@@ -66,7 +66,7 @@ in
       type = lib.types.path;
       default = pkgs.fetchurl {
         url = "${releaseBase}/initrd";
-        sha256 = "9df502f0eb807f923783c14bd10164c7d3b680ddfa1c01944474be662754c403";
+        sha256 = "7deef8d50ce99a9a33c00790cb6123513e0d079f5945d1a4a53ff6418974cd63";
       };
       description = ''
         装配后的 initramfs（已注入 ext4 依赖链，本仓库 release asset）。
@@ -77,7 +77,7 @@ in
       type = lib.types.path;
       default = pkgs.fetchurl {
         url = "${releaseBase}/alpine-router-rootfs.qcow2";
-        sha256 = "4febc2b6c512517b2e4de7551961b9bdb6e7bb266f9038736ebeb8397d80cc35";
+        sha256 = "9664bf6cffdf71eae97913f727d0b66816abf7c5331a925647a74fbe111b7430";
       };
       description = ''
         VM 根磁盘 qcow2（rootfs + modloop 模块，本仓库 release asset）。
