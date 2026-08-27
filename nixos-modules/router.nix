@@ -146,9 +146,8 @@ in
       '';
 
     # 密钥模板：宿主侧 sudo cp 后填真实值（chmod 600）
-    environment.etc."libvirt/alpine-router.env.example" = {
-      source = ../deploy-assets/env.example;
-    };
+    environment.etc."libvirt/alpine-router.env.example".text =
+      builtins.readFile ../deploy-assets/env.example;
 
     environment.systemPackages = [
       (pkgs.writeShellScriptBin "alpine-router-deploy" ''
