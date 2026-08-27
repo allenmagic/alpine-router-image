@@ -37,6 +37,13 @@ let
     cp ${cfg.kernelFile} $out/bzImage
     cp ${cfg.kernelFile} $dev/vmlinux
   '';
+
+  # 状态盘路径带镜像内容哈希：镜像更新 → 路径变 → ExecStart 变 → VM 必然重启
+  # （volumes.image 固定路径不在 restartIfChanged 检测内，此前依赖 initrd
+  # store 路径碰巧变化才重启）；旧镜像文件保留，rollback 时旧 generation
+  # 直接指向旧镜像，无需重新复制
+  imgId = builtins.substring 0 16 (builtins.hashString "sha256" (builtins.toString cfg.rootfsImage));
+  stateImage = "/var/lib/alpine-router/rootfs-${imgId}.qcow2";
 in
 
 {
@@ -117,7 +124,9 @@ in
     # CPU 独占：指定核隔离给路由器 VM（宿主调度器不再使用该核）
     boot.kernelParams = [ "isolcpus=${toString cfg.cpu}" "rcu_nocbs=${toString cfg.cpu}" ];
 
-    # 首次启动 / release 升级时把镜像复制到可写状态目录
+    # 首次启动 / 镜像更新时把 release 镜像复制到可写状态目录。
+    # 文件名含内容哈希：不存在才复制（幂等）；旧版本镜像文件保留
+    # 供 rollback 复用，可手动清理
     systemd.services.alpine-router-disk = {
       wantedBy = [ "multi-user.target" ];
       requiredBy = [ "microvm@alpine-router.service" ];
@@ -125,14 +134,11 @@ in
       serviceConfig.Type = "oneshot";
       script = ''
         STATE_DIR=/var/lib/alpine-router
-        STATE_IMG="$STATE_DIR/rootfs.qcow2"
-        SRC=${cfg.rootfsImage}
-        MARK="$STATE_DIR/.src-path"
+        STATE_IMG=${stateImage}
         mkdir -p "$STATE_DIR"
-        if [ ! -f "$STATE_IMG" ] || [ "$(cat "$MARK" 2>/dev/null)" != "$SRC" ]; then
-          echo "初始化/更新 VM 根磁盘: $SRC"
-          install -m 0644 "$SRC" "$STATE_IMG"
-          printf '%s' "$SRC" > "$MARK"
+        if [ ! -f "$STATE_IMG" ]; then
+          echo "初始化 VM 根磁盘: ${cfg.rootfsImage} -> $STATE_IMG"
+          install -m 0644 "${cfg.rootfsImage}" "$STATE_IMG"
         fi
       '';
     };
@@ -183,8 +189,8 @@ in
         microvm.kernelParams = [ "root=/dev/vda" "rootfstype=ext4" "rw" ];
 
         microvm.volumes = [{
-          # vda：根卷（disk-prep 服务维护的可写状态副本）
-          image = "/var/lib/alpine-router/rootfs.qcow2";
+          # vda：根卷（disk-prep 维护的可写状态副本，路径含内容哈希）
+          image = stateImage;
           mountPoint = "/";
           autoCreate = false;
           imageType = "qcow2";   # CH 的 --disk 默认 image_type=raw，必须显式声明
