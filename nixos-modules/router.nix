@@ -89,8 +89,8 @@ in
       default = 0;
       description = ''
         隔离给路由器 VM 独占的宿主核号（isolcpus + vcpu0 affinity）。
-        默认 0（所有机器都有此核，最通用）；4 核机器（如 N5095）可设 3
-        独占末核。注意：isolcpus 影响整个宿主，核号必须真实存在。
+        默认 0（所有机器都有此核，最通用）。
+        注意：isolcpus 影响整个宿主，核号必须真实存在。
       '';
     };
 
@@ -100,7 +100,6 @@ in
       description = ''
         vCPU 总数：vcpu0 独占隔离核（affinity pin 到 `cpu`），
         其余 vCPU 由宿主调度器在非隔离核上动态调度。
-        N5095（4 核）如设 3 则为 1 独占 + 2 动态（宿主剩 1 核）。
       '';
     };
 

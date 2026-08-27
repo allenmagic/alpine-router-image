@@ -25,7 +25,7 @@ imports = [ inputs.alpine-router-image.nixosModules.router ];
 microvm.router = {
   enable = true;
   # 可选参数：
-  #   cpu（isolcpus 独占核，默认 0；N5095 可设 3 独占末核）
+  #   cpu（isolcpus 独占核，默认 0）
   #   vcpus（vCPU 总数，默认 2：vcpu0 独占 + 其余动态调度）
   #   mem（默认 512）/ initialBalloonMem（默认 256，128M 对齐）
   #   wanBridge / lanBridge（默认 br-wan / br-lan）
