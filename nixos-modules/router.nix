@@ -27,7 +27,7 @@ let
 
   # 本仓库 CI release（升级时同步改 tag 与三处 sha256，
   # 真实值取 release 的 SHA256SUMS asset）
-  imageRelease = "alpine-router-image-20260826";
+  imageRelease = "alpine-router-image-20260827";
   releaseBase = "https://github.com/allenmagic/alpine-router-image/releases/download/${imageRelease}";
 
   # 客户机内核包装：CH runner（x86_64 分支）取 ${kernel.dev}/vmlinux——
@@ -66,7 +66,7 @@ in
       type = lib.types.path;
       default = pkgs.fetchurl {
         url = "${releaseBase}/initrd";
-        sha256 = "e32522f9ae486522348e69343941a1d01a194945604d8fa7518b11346953002c";
+        sha256 = "89eff08974bdf5307cd8975b53b8a8480588ce25ced50690d9eb15cc46a6fa61";
       };
       description = ''
         装配后的 initramfs（已注入 ext4 依赖链，本仓库 release asset）。
@@ -77,7 +77,7 @@ in
       type = lib.types.path;
       default = pkgs.fetchurl {
         url = "${releaseBase}/alpine-router-rootfs.qcow2";
-        sha256 = "7b5810ed4a6ac1371a51f7d4d0043242add3f513ab2220fd79c22d6b515b0dd5";
+        sha256 = "f9dfffa3770882fde7a799a48747eb4e37ae957a46929a8a960b6bd0c4c36cd3";
       };
       description = ''
         VM 根磁盘 qcow2（rootfs + modloop 模块，本仓库 release asset）。
