@@ -86,10 +86,11 @@ in
 
     cpu = lib.mkOption {
       type = lib.types.ints.unsigned;
-      default = 3;
+      default = 0;
       description = ''
         隔离给路由器 VM 独占的宿主核号（isolcpus + vcpu0 affinity）。
-        注意：isolcpus 影响整个宿主——修改时确认宿主的核数。
+        默认 0（所有机器都有此核，最通用）；4 核机器（如 N5095）可设 3
+        独占末核。注意：isolcpus 影响整个宿主，核号必须真实存在。
       '';
     };
 
