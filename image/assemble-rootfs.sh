@@ -16,14 +16,77 @@ cd "$WORK"
 mkdir -p rootfs
 tar xf "$ROOTFS_TARBALL" -C rootfs --numeric-owner
 
-# 内核模块：modloop-virt 里是 modules/<ver>/（注意非 lib/modules），
-# 平移到 rootfs/lib/modules/<ver>，供 openrc/mdev 的 modprobe 使用
-mkdir -p rootfs/lib/modules
+# ============================================================
+# 内核模块：按需拷贝（modloop-virt 全量 → 入口清单 + modinfo 递归依赖闭包）
+# ============================================================
+# modloop-virt 里是 modules/<ver>/（注意非 lib/modules），与 vmlinuz-virt 配套
 unsquashfs -d modloop-x "$MODLOOP" >/dev/null
-cp -r modloop-x/modules/* rootfs/lib/modules/
+MV="$(ls modloop-x/modules/ | grep -E '^[0-9]')"
+MODSRC="modloop-x/modules/$MV"
+MODDST="rootfs/lib/modules/$MV"
+mkdir -p "$MODDST"
 
+# 入口模块：从镜像内配置读取（改 modules-load 配置自动跟随）
+#   /etc/modules          引导期 modules 服务加载（nf_tables/virtio_net/af_packet…）
+#   /etc/modules-load.d/*.conf  附加加载（tun/bbr/sch_fq/nf_conntrack…）
+# 固定补充入口（配置之外的需求）：
+#   virtio_pci/virtio_vsock  CH 设备族（vsock.cid 已配）
+#   ext4 链                  运行期挂载/兼容保险（引导期已由 initrd 加载）
+ENTRY="$(cat rootfs/etc/modules 2>/dev/null || true)"
+ENTRY="$ENTRY $(cat rootfs/etc/modules-load.d/*.conf 2>/dev/null | grep -v '^#' || true)"
+ENTRY="$ENTRY virtio_pci virtio_vsock ext4 jbd2 mbcache crc16"
+
+# 模块名 → 路径 索引
+IDX="$WORK/modindex"
+find "$MODSRC" -name "*.ko*" 2>/dev/null | while read -r ko; do
+    base="${ko##*/}"
+    printf '%s %s\n' "${base%%.*}" "$ko"
+done > "$IDX"
+
+DONE="$WORK/copied"
+: > "$DONE"
+
+# modinfo 递归依赖闭包拷贝（保留模块在 modloop 内的相对路径）
+_copy_mod() {
+    _name="$1"
+    [ -n "$_name" ] || return 0
+    _path="$(awk -v n="$_name" '$1==n { print $2; exit }' "$IDX")"
+    [ -n "$_path" ] || return 0          # 不在 modloop（内核内建）则跳过
+    grep -qx "$_name" "$DONE" && return 0
+    echo "$_name" >> "$DONE"
+
+    _rel="${_path#"$MODSRC"/}"
+    mkdir -p "$MODDST/$(dirname "$_rel")"
+    cp "$_path" "$MODDST/$_rel"
+
+    # 递归依赖（modinfo -F depends 输出逗号分隔，无依赖输出空）
+    _deps="$(modinfo -F depends "$_path" 2>/dev/null | tr ',' '\n' || true)"
+    for _d in $_deps; do
+        [ "$_d" != "-" ] && _copy_mod "$_d"
+    done
+}
+
+for _m in $ENTRY; do
+    _copy_mod "$_m"
+done
+
+# netfilter 目录整体保留：nft_*（masq/ct/limit/log…）不是 nf_tables 的
+# 依赖，而是 nft 应用规则时运行时 modprobe 的独立模块——依赖闭包无法覆盖，
+# 作为路由器核心目录粗粒度保留（几十个模块，体积代价小）
+cp -r "$MODSRC/kernel/net" "$MODDST/kernel/" 2>/dev/null || true
+
+# firmware 不拷贝：路由器场景（virtio/tun/netfilter）无固件需求
+rm -rf rootfs/lib/firmware 2>/dev/null || true
+
+# 重建模块索引（modprobe 读 modules.dep.bin 二进制索引，必须 depmod）
+depmod -b rootfs "$MV"
+
+echo "[assemble-rootfs] 模块精简：$(wc -l < "$DONE") 个（含依赖闭包）"
+
+# ============================================================
 # 引导期自动加载：r3s 的 modules 服务注册在 default runlevel，
 # 字母序排在 nftables/networking 之后；nf_tables 必须提前就位
+# ============================================================
 cat >> rootfs/etc/modules <<'MODULES'
 nf_tables
 virtio_net
