@@ -35,12 +35,14 @@ inject_secrets() {
         echo "  → 未提供 TAILSCALE_AUTH_KEY，跳过"
     fi
 
-    # Cloudflared: token 写入 /etc/cloudflared/config.yml
+    # Cloudflared: token 写入 /etc/cloudflared/config.yml 后重启服务——
+    # 出厂时服务已在跑（无 token 空转），注入 token 必须重启才生效
     if [ -n "${CLOUDFLARED_TOKEN:-}" ]; then
         mkdir -p /etc/cloudflared
         printf 'token: %s\n' "${CLOUDFLARED_TOKEN}" > /etc/cloudflared/config.yml
         chmod 600 /etc/cloudflared/config.yml
-        echo "  → Cloudflared token 已注入"
+        rc-service cloudflared restart 2>/dev/null || true
+        echo "  → Cloudflared token 已注入并重启服务"
     else
         echo "  → 未提供 CLOUDFLARED_TOKEN，跳过"
     fi
@@ -48,6 +50,11 @@ inject_secrets() {
 
 tailscale_up() {
     if [ -f /etc/tailscale/authkey ]; then
+        # 无 authkey 启动时 tailscaled 可能已退出（crashed），
+        # 先确保服务在跑（rc-service start 幂等）再登录
+        echo "[secrets] 确保 tailscaled 运行..."
+        rc-service tailscale start 2>/dev/null || true
+        sleep 1
         echo "[secrets] Tailscale 登录（authkey）..."
         tailscale up
     else
