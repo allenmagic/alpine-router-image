@@ -24,12 +24,20 @@ inputs.alpine-router-image.url = "github:allenmagic/alpine-router-image";
 imports = [ inputs.alpine-router-image.nixosModules.router ];
 microvm.router = {
   enable = true;
-  # 可选参数：
-  #   cpu（isolcpus 独占核，默认 0）
-  #   vcpus（vCPU 总数，默认 2：vcpu0 独占 + 其余动态调度）
-  #   mem（默认 512）/ initialBalloonMem（默认 256，128M 对齐）
-  #   wanBridge / lanBridge（默认 br-wan / br-lan）
-  #   kernelFile / initrd / rootfsImage（本地调试覆盖）
+
+  cpu = 0;                 # isolcpus 独占核（默认 0；vcpu0 pin 到此核）
+  vcpus = 2;               # vCPU 总数（默认 2：vcpu0 独占 + 其余动态调度）
+  mem = 512;               # guest 内存上限 MB（默认 512）
+  initialBalloonMem = 256; # 初始 balloon MB，128M 对齐（默认 256）
+
+  wanBridge = "br-wan";    # WAN 侧宿主桥（默认 br-wan）
+  lanBridge = "br-lan";    # LAN 侧宿主桥（默认 br-lan）
+
+  # 镜像资产默认从本仓库 release fetchurl（tag+sha256 模块内锁定）；
+  # 本地调试（如 CI 不可用）时覆盖：
+  # kernelFile  = /path/to/vmlinuz-virt;
+  # initrd      = /path/to/initrd;
+  # rootfsImage = /path/to/alpine-router-rootfs.qcow2;
 };
 ```
 
