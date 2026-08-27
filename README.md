@@ -1,19 +1,42 @@
 # alpine-router-image
 
-Alpine 路由 VM 镜像生产仓库：CI 构建 Alpine rootfs（构建链移植自
-[nanopi-r3s-rootfs](https://github.com/allenmagic/nanopi-r3s-rootfs)，单一发行版链）
-+ 装配 Alpine 官方 virt 三件套，产出可启动的 VM 镜像 release asset，
-供 [qnap-nixos-nas](https://github.com/allenmagic/qnap-nixos-nas) 的 microvm 直接拉取启动。
+Alpine 路由 VM 的**唯一仓库**：镜像生产（CI）+ 消费端声明（flake 模块）。
+rootfs 构建链移植自
+[nanopi-r3s-rootfs](https://github.com/allenmagic/nanopi-r3s-rootfs)（单一发行版链），
+装配 Alpine 官方 virt 三件套，产出可启动的 VM 镜像 release asset。
 
-## 供应链分工
+## 仓库分工
 
-| repo | 职责 |
+| 环节 | 位置 |
 |---|---|
-| 本仓库 | VM 镜像生产：rootfs 构建 + virt 三件套装配 → release |
-| qnap-nixos-nas | microvm 声明 + fetchurl 拉镜像 + deploy（配置/密钥唯一覆盖通道） |
-| nanopi-r3s-rootfs | R3S 路由器 rootfs（多发行版框架，本仓库的一次性移植来源） |
+| rootfs 构建 + virt 三件套装配 → release | 本仓库 CI（`image/assemble.sh`） |
+| microvm 消费端声明（fetchurl/CH 参数/disk-prep/tap 挂桥） | 本仓库 `nixosModules.router` |
+| 密钥注入 | 宿主侧 deploy（qnap-nixos-nas 的 `alpine-router/`，env 文件 600 权限不进 git） |
+| 包集（package.list） | [nanopi-r3s-rootfs](https://github.com/allenmagic/nanopi-r3s-rootfs)（本仓库是一次性拷贝） |
 
-## 构建流程
+## 消费端使用（flake 模块）
+
+```nix
+# 宿主 flake
+inputs.alpine-router-image.url = "github:allenmagic/alpine-router-image";
+
+# 宿主模块
+imports = [ inputs.alpine-router-image.nixosModules.router ];
+microvm.router.enable = true;
+# 可选参数：cpu（isolcpus 独占核，默认 0；N5095 可设 3 独占末核）
+#           mem（默认 512）/ initialBalloonMem（默认 256，128M 对齐）
+#           wanBridge / lanBridge（默认 br-wan / br-lan）
+#           kernelFile / initrd / rootfsImage（本地调试覆盖）
+```
+
+镜像 release 的 tag 与三处 sha256 硬编码在模块内（`nixos-modules/router.nix`），
+**CI 出 release 后自动同步**（`image/sync-flake-sha.py`，幂等）——宿主升级只需
+`nix flake update`。
+
+镜像更新 → 状态盘路径（含内容哈希）变化 → CH 命令行变化 → VM 自动重启；
+旧镜像文件保留，宿主 rollback 直接复用。
+
+## 构建流程（本地）
 
 ```bash
 # 1. 构建 Alpine rootfs（产物 build/alpine/alpine-rootfs-minimal.tar.xz）
@@ -24,19 +47,22 @@ ARCH=x86_64 PACK=1 sudo -E bash distros/alpine/build.sh
 # 产物：dist/{vmlinuz-virt, initrd, alpine-router-rootfs.qcow2, SHA256SUMS}
 ```
 
-CI 手动触发后上传 release（tag `alpine-router-image-YYYYMMDD`）。
+CI 手动触发后：构建 → release 上传（tag `alpine-router-image-YYYYMMDD`）→
+自动同步 flake 模块 sha256 并推送。
 
 ## 关键设计
 
 - **三件套固定版本**：Alpine 3.24.1 netboot（vmlinuz-virt / initramfs-virt /
-  modloop-virt），URL+sha256 在 `image/assemble.sh` 顶部，与 qnap-nixos-nas
-  的 microvm/*.nix 保持一致（升级 Alpine 版本时两边同步）。
+  modloop-virt），URL+sha256 在 `image/assemble.sh` 顶部（升级 Alpine 版本时更新）。
 - **initrd 注入 ext4 依赖链**：netboot 版 initramfs 不含 ext4（root= 模式不挂
   modloop，官方安装系统的 mkinitfs 会注入——此处为等效操作）；modprobe 读
   `modules.dep.bin` 二进制索引，必须 depmod 重建。
 - **uid 0 属主**：CI runner 是 root 直接装配；本地非 root 时 assemble.sh 自动
   fakeroot 包裹（镜像内 /var/empty 等归属错误会导致 sshd 拒启）。
-- **无密钥**：不使用 CI secrets——密钥由宿主 deploy 部署时注入，release 产物
-  公开可下载，密钥绝不进入。
-- **出厂配置会被覆盖**：rootfs 烙入的配置（r3s 版）在部署时被 NAS 权威版
-  （alpine-router/base）覆盖，deploy 是唯一配置覆盖通道。
+- **无密钥**：不使用 CI secrets——密钥由宿主 deploy 部署时注入（env 文件），
+  release 产物公开可下载，密钥绝不进入。
+- **配置权威源**：全部路由配置（nftables/dnsmasq/sysctl/服务脚本/网络参数）
+  在本仓库 `base/` 与 `network.env`，CI 烙进镜像——出厂即正确；
+  deploy 只做密钥注入。
+- **无 rootfs 占位符残留**：`network.sh` 构建时按 `network.env` 替换全部
+  `__XXX__` 占位符（dnsmasq 主配置/模块配置/nftables vars/tailscale config）。
