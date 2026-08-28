@@ -58,7 +58,9 @@ while [ $# -gt 0 ]; do
 done
 
 [ "$(id -u)" -eq 0 ] || die "需要 root（要操作网卡/桥/tap，用 sudo 跑）"
-command -v cloud-hypervisor >/dev/null 2>&1 || die "未找到 cloud-hypervisor（Arch AUR: paru -S cloud-hypervisor-bin）"
+# AUR 的 cloud-hypervisor-bin 只装 cloud-hypervisor-static（无 cloud-hypervisor 主名）
+CH_BIN="$(command -v cloud-hypervisor 2>/dev/null || command -v cloud-hypervisor-static 2>/dev/null)"
+[ -n "$CH_BIN" ] || die "未找到 cloud-hypervisor（Arch AUR: paru -S cloud-hypervisor-bin）"
 [ -n "$UPLINK" ] || die "必须用 --uplink 指定上游网卡（例如 eth0 / enp3s0）"
 ip link show "$UPLINK" >/dev/null 2>&1 || die "网卡不存在: $UPLINK"
 case "$DISTRO" in alpine|gentoo) ;; *) die "distro 只支持 alpine|gentoo" ;; esac
@@ -113,7 +115,7 @@ cleanup_net() {
 
 boot_ch() {
     log "cloud-hypervisor 启动 $DISTRO（Ctrl+C 退出并自动清理网络）"
-    cloud-hypervisor \
+    "$CH_BIN" \
         --kernel "$ASSETS_DIR/vmlinuz-virt" \
         --initramfs "$ASSETS_DIR/initrd" \
         --cmdline "console=ttyS0 root=/dev/vda rootfstype=ext4 rw" \

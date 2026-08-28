@@ -182,8 +182,9 @@ boot_qemu() {
 
 boot_ch() {
     local distro="$1"
-    command -v cloud-hypervisor >/dev/null 2>&1 || \
-        die "未找到 cloud-hypervisor（Arch AUR: paru -S cloud-hypervisor-bin）"
+    # AUR 的 cloud-hypervisor-bin 只装 cloud-hypervisor-static（无 cloud-hypervisor 主名）
+    local ch; ch="$(command -v cloud-hypervisor 2>/dev/null || command -v cloud-hypervisor-static 2>/dev/null)"
+    [ -n "$ch" ] || die "未找到 cloud-hypervisor（Arch AUR: paru -S cloud-hypervisor-bin）"
     # CH 无 qemu 的 -snapshot 等价物，先复制到临时文件再启动，避免污染缓存镜像
     # （与生产 disk-prep 先复制到状态盘同一思路）
     local img="${ASSETS_DIR}/${distro}-rootfs.qcow2"
@@ -191,7 +192,7 @@ boot_ch() {
     log "复制镜像到临时文件（避免污染缓存）..."
     cp "$img" "$scratch"
     log "cloud-hypervisor 启动 ${distro}（纯 boot 冒烟，未接 tap；Ctrl+C 退出）"
-    sudo cloud-hypervisor \
+    sudo "$ch" \
         --kernel "${ASSETS_DIR}/vmlinuz-virt" \
         --initramfs "${ASSETS_DIR}/initrd" \
         --cmdline "$KCMD" \
