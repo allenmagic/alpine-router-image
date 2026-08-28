@@ -91,7 +91,10 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: vm-image-${{ matrix.distro }}
+          # artifact 名带 run_id：download 时按本次 run 精确匹配，
+          # 避免 merge-multiple 混入 retention 期内的旧 run artifact
+          # （曾导致 SHA256SUMS 出现跨构建重复条目）
+          name: vm-image-${{ matrix.distro }}-${{ github.run_id }}
           path: dist/*
           if-no-files-found: error
           retention-days: 7
@@ -108,6 +111,7 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+          pattern: vm-image-*-${{ github.run_id }}
 
       - name: Merge SHA256SUMS
         run: |

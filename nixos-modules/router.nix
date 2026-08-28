@@ -40,9 +40,7 @@ let
     };
     gentoo = {
       url = "${releaseBase}/gentoo-rootfs.qcow2";
-      # 全零占位：构建链未就绪（选择 gentoo 会构建失败并显示真实值）；
-      # CI 出 gentoo 条目后 sync 脚本会自动替换
-      sha256 = "0000000000000000000000000000000000000000000000000000000000000000";
+      sha256 = "dd5a192af14babb6aa9c4fb880ffacb57d8096201cee70d06cbb0a601e7f9fc5";
     };
   };
 
