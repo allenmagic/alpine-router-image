@@ -104,6 +104,6 @@ if [ -n "$NFT_CHECK_DIR" ]; then
     cp rootfs/etc/nftables.d/*.nft "$NFT_CHECK_DIR/" 2>/dev/null || true
 fi
 
-truncate -s 8G "$OUT_EXT4"
+truncate -s 4G "$OUT_EXT4"
 mkfs.ext4 -q -F -L alpine-rootfs -d rootfs "$OUT_EXT4"
 echo "[assemble-rootfs] 完成"
