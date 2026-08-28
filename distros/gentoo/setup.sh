@@ -6,7 +6,7 @@
 set -eu
 
 ROOT_PASSWORD="${ROOT_PASSWORD:-root}"
-HOSTNAME_VAL="${HOSTNAME_VAL:-nanopi-r3s-gentoo}"
+HOSTNAME_VAL="${HOSTNAME_VAL:-alpine-router}"
 TARGET_ROOTFS="${TARGET_ROOTFS:-/gentoo-rootfs}"
 SERIAL_DEV="${SERIAL_DEV:-ttyS0}"   # VM 串口（R3S 是 ttyS2）
 SERIAL_BAUD="${SERIAL_BAUD:-115200}"
@@ -488,7 +488,7 @@ else
 fi
 
 # 确保串口控制台 — 直接覆盖（不用 stage3 自带的 inittab）
-# id 字段必须 ≤4 字符，sysvinit 限制；S2 = serial-2（ttyS2）
+# id 字段必须 ≤4 字符，sysvinit 限制；S2 = serial-2（ttyS0）
 cat > "${TARGET_ROOTFS}/etc/inittab" <<EOF
 id:3:initdefault:
 si::sysinit:/sbin/openrc sysinit

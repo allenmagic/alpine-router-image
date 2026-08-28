@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# distros/gentoo/build.sh —— 构建 Gentoo aarch64 rootfs
-# 从 Gentoo distfiles 下载 stage3-arm64-musl-openrc tarball 作为构建环境，
+# distros/gentoo/build.sh —— 构建 Gentoo rootfs（VM 场景默认 x86_64）
+# 从 Gentoo distfiles 下载 stage3-<arch>-musl-openrc tarball 作为构建环境，
 # 在其中用 ROOT= emerge 安装包到干净的目标 rootfs
 # 产物落在仓库内 build/gentoo/（被 .gitignore 排除）
 #
@@ -27,7 +27,7 @@ BUILD_BASE="${BUILD_BASE:-${BUILD_ROOT}/${DISTRO}}"
 STAGE3_DIR="${STAGE3_DIR:-${BUILD_BASE}/stage3}"         # stage3 解压目录（构建环境）
 ROOTFS="${ROOTFS:-${BUILD_BASE}/gentoo-rootfs}"         # 最终产物目录（轻量 rootfs）
 CACHE_DIR="${CACHE_DIR:-${BUILD_BASE}/cache}"
-ARCH="${ARCH:-aarch64}"                                 # 统一命名（与 CI/workflow 一致）
+ARCH="${ARCH:-x86_64}"                                  # 统一命名（与 CI/workflow 一致）
 
 # Gentoo 的架构命名：aarch64 → arm64，x86_64 → amd64（stage3 路径与镜像目录都用它）
 case "${ARCH}" in
@@ -38,7 +38,7 @@ esac
 
 MIRROR="${MIRROR:-https://distfiles.gentoo.org/releases/${GENTOO_ARCH}/autobuilds}"
 ROOT_PASSWORD="${ROOT_PASSWORD:-root}"
-HOSTNAME_VAL="${HOSTNAME_VAL:-nanopi-r3s-gentoo}"
+HOSTNAME_VAL="${HOSTNAME_VAL:-alpine-router}"
 SETUP_SCRIPT="${SCRIPT_DIR}/setup.sh"
 PACK="${PACK:-0}"
 
