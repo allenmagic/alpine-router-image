@@ -472,6 +472,9 @@ fi
 
 echo "[setup] 设置主机名：${HOSTNAME_VAL}"
 echo "${HOSTNAME_VAL}" > "${TARGET_ROOTFS}/etc/hostname"
+# Gentoo 的 hostname 服务读 conf.d/hostname（hostname="..." 格式），
+# 仅写 /etc/hostname（Alpine 习惯）在 Gentoo 上不生效
+echo "hostname=\"${HOSTNAME_VAL}\"" > "${TARGET_ROOTFS}/etc/conf.d/hostname"
 if [ ! -f "${TARGET_ROOTFS}/etc/hosts" ]; then
     cat > "${TARGET_ROOTFS}/etc/hosts" <<EOF
 127.0.0.1       localhost
