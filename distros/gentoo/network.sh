@@ -10,9 +10,10 @@ configure_network() {
 
     _replace_placeholders
 
-    # netifrc 配置：WAN DHCP + LAN static
+    # netifrc 配置：WAN DHCP（显式用 busybox udhcpc）+ LAN static
     cat > "${TARGET_ROOTFS}/etc/conf.d/net" << EOF
 config_${WAN_IFACE}="dhcp"
+dhcpclient_${WAN_IFACE}="udhcpc"
 config_${LAN_IFACE}="${LAN_IP}/${LAN_CIDR}"
 EOF
 
@@ -25,12 +26,13 @@ EOF
 
 # 通用占位符替换（所有 distro 共用逻辑）
 _replace_placeholders() {
-    # dnsmasq DHCP 配置
-    for _f_ in "${TARGET_ROOTFS}"/etc/dnsmasq.d/*.conf; do
+    # dnsmasq 主配置 + 模块化 DHCP 配置（含浮动网关 __LAN_GATEWAY__）
+    for _f_ in "${TARGET_ROOTFS}"/etc/dnsmasq.conf "${TARGET_ROOTFS}"/etc/dnsmasq.d/*.conf; do
         [ -f "${_f_}" ] || continue
         sed -i \
             -e "s|__LAN_IFACE__|${LAN_IFACE}|g" \
             -e "s|__LAN_IP__|${LAN_IP}|g" \
+            -e "s|__LAN_GATEWAY__|${LAN_GATEWAY}|g" \
             -e "s|__DHCP_RANGE_START__|${DHCP_RANGE_START}|g" \
             -e "s|__DHCP_RANGE_END__|${DHCP_RANGE_END}|g" \
             -e "s|__DHCP_LEASE_TIME__|${DHCP_LEASE_TIME}|g" \
@@ -38,6 +40,13 @@ _replace_placeholders() {
             -e "s|__LAN_NETWORK__|${LAN_NETWORK}|g" \
             "${_f_}"
     done
+
+    # keepalived（浮动网关接口名）
+    _KA="${TARGET_ROOTFS}/etc/keepalived/keepalived.conf"
+    if [ -f "${_KA}" ]; then
+        sed -i "s|__LAN_IFACE__|${LAN_IFACE}|g" "${_KA}"
+    fi
+
     # nftables vars
     _NFT="${TARGET_ROOTFS}/etc/nftables.d/00-inet-vars.nft"
     if [ -f "${_NFT}" ]; then
@@ -47,5 +56,14 @@ _replace_placeholders() {
             -e "s|__ROUTER_LAN_IP__|${LAN_IP}|g" \
             -e "s|__LAN_NET__|${LAN_NETWORK}|g" \
             "${_NFT}"
+    fi
+
+    # tailscale（hostname 与通告路由）
+    _TS="${TARGET_ROOTFS}/etc/tailscale/config.json"
+    if [ -f "${_TS}" ]; then
+        sed -i \
+            -e "s|__TS_HOSTNAME__|${TS_HOSTNAME}|g" \
+            -e "s|__TS_ADVERTISE_ROUTES__|\"${TS_ADVERTISE_ROUTES}\"|g" \
+            "${_TS}"
     fi
 }

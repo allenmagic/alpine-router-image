@@ -6,7 +6,7 @@
 set -eu
 
 ROOT_PASSWORD="${ROOT_PASSWORD:-root}"
-HOSTNAME_VAL="${HOSTNAME_VAL:-alpine-router}"
+HOSTNAME_VAL="${HOSTNAME_VAL:-gentoo-router}"
 TARGET_ROOTFS="${TARGET_ROOTFS:-/gentoo-rootfs}"
 SERIAL_DEV="${SERIAL_DEV:-ttyS0}"   # VM 串口（R3S 是 ttyS2）
 SERIAL_BAUD="${SERIAL_BAUD:-115200}"
@@ -437,6 +437,16 @@ EOF
 else
     grep -qx '/bin/bash' "${TARGET_ROOTFS}/etc/shells" 2>/dev/null || echo '/bin/bash' >> "${TARGET_ROOTFS}/etc/shells"
 fi
+
+# 登录环境 PATH：ROOT= emerge 时 baselayout 的 env-update 只作用于 stage3 构建环境，
+# 目标 rootfs 里会残留错误的 profile.env（实测 PATH 缺 /bin:/sbin:/usr/sbin，
+# 只有 /usr/local/sbin:/usr/local/bin:/usr/bin:/opt/bin），导致登录 shell 里
+# ls/cat（/bin）、rc-service 等（/sbin）全找不到。必须无条件用完整 PATH 覆盖。
+mkdir -p "${TARGET_ROOTFS}/etc/env.d"
+cat > "${TARGET_ROOTFS}/etc/profile.env" <<'EOF'
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+EOF
+echo "[setup]   已写 /etc/profile.env（登录 PATH）"
 
 echo "[setup] 设置主机名：${HOSTNAME_VAL}"
 echo "${HOSTNAME_VAL}" > "${TARGET_ROOTFS}/etc/hostname"

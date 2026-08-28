@@ -33,7 +33,7 @@ HOST_ARCH="$(uname -m)"        # 宿主机架构（传入 setup.sh 的原生构�
 
 MIRROR="${MIRROR:-https://distfiles.gentoo.org/releases/${GENTOO_ARCH}/autobuilds}"
 ROOT_PASSWORD="${ROOT_PASSWORD:-root}"
-HOSTNAME_VAL="${HOSTNAME_VAL:-alpine-router}"
+HOSTNAME_VAL="${HOSTNAME_VAL:-gentoo-router}"
 SETUP_SCRIPT="${SCRIPT_DIR}/setup.sh"
 PACK="${PACK:-0}"
 

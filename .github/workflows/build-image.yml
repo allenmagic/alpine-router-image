@@ -28,7 +28,6 @@ permissions:
 env:
   ARCH: x86_64
   PACK: "1"
-  HOSTNAME_VAL: alpine-router
 
 jobs:
   prepare:
@@ -68,6 +67,9 @@ jobs:
             cpio gzip squashfs-tools kmod e2fsprogs qemu-utils fakeroot nftables
 
       - name: Build rootfs (${{ matrix.distro }} / base / x86_64)
+        env:
+          # 宿主 hostname 按发行版区分（alpine-router / gentoo-router）
+          HOSTNAME_VAL: ${{ matrix.distro }}-router
         run: |
           set -euo pipefail
           chmod +x "distros/${{ matrix.distro }}/build.sh"
