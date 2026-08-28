@@ -8,6 +8,7 @@ set -euo pipefail
 ROOTFS_TARBALL="$1"
 MODLOOP="$2"
 OUT_EXT4="$3"
+NFT_CHECK_DIR="${4:-}"   # 可选：把 nftables 文件复制到此目录供宿主侧语法验证
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -95,6 +96,13 @@ MODULES
 # 启用 ttyS0 getty：r3s 产物默认注释（Alpine 默认状态）。
 # vmlinuz-virt 内建 8250 串口驱动，microvm 控制台/串口访问依赖它
 sed -i 's|^#ttyS0:|ttyS0:|' rootfs/etc/inittab
+
+# 复制 nftables 文件供宿主侧语法验证（fakeroot 会拦截 nft 的 netlink 调用）
+if [ -n "$NFT_CHECK_DIR" ]; then
+    mkdir -p "$NFT_CHECK_DIR"
+    cp rootfs/etc/nftables.nft "$NFT_CHECK_DIR/" 2>/dev/null || true
+    cp rootfs/etc/nftables.d/*.nft "$NFT_CHECK_DIR/" 2>/dev/null || true
+fi
 
 truncate -s 8G "$OUT_EXT4"
 mkfs.ext4 -q -F -L alpine-rootfs -d rootfs "$OUT_EXT4"

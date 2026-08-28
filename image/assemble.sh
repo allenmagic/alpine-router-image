@@ -64,10 +64,39 @@ depmod -b "$WORK/initrd-x" "$MV"
 # ---------- 3. rootfs 装配 ----------
 echo "[assemble] rootfs：注入 modloop 模块 + 装配 ext4 ..."
 if [ "$(id -u)" -eq 0 ]; then
-    bash "$SCRIPT_DIR/assemble-rootfs.sh" "$ROOTFS_TARBALL" "$WORK/modloop-virt" "$WORK/rootfs.ext4"
+    bash "$SCRIPT_DIR/assemble-rootfs.sh" "$ROOTFS_TARBALL" "$WORK/modloop-virt" "$WORK/rootfs.ext4" "$WORK/nft-check"
 else
     command -v fakeroot >/dev/null 2>&1 || { echo "[assemble] 非 root 环境需要 fakeroot" >&2; exit 1; }
-    fakeroot -- bash "$SCRIPT_DIR/assemble-rootfs.sh" "$ROOTFS_TARBALL" "$WORK/modloop-virt" "$WORK/rootfs.ext4"
+    fakeroot -- bash "$SCRIPT_DIR/assemble-rootfs.sh" "$ROOTFS_TARBALL" "$WORK/modloop-virt" "$WORK/rootfs.ext4" "$WORK/nft-check"
+fi
+
+# ---------- 3.5 nftables 语法验证（宿主侧；fakeroot 会拦截 nft 的 netlink 调用） ----------
+# 占位符已在构建期按 network.env 替换；防止规则编辑（如删规则时留孤儿块）
+# 在 CI 静默通过、真机才爆
+if [ -f "$WORK/nft-check/nftables.nft" ]; then
+    # nft -c 仍需 netlink 权限（batch 检查），普通用户经 sudo 执行；
+    # 本地无密码 sudo 时警告跳过（CI runner 无密码 sudo，必然执行）
+    NFT_CMD="nft"
+    if [ "$(id -u)" -ne 0 ]; then
+        if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+            NFT_CMD="sudo nft"
+        else
+            echo "[assemble] ⚠️ 无 root 权限，跳过 nft 语法验证（CI 环境会强制执行）"
+            NFT_CMD=""
+        fi
+    fi
+    if [ -n "$NFT_CMD" ]; then
+        # 剔除 flush ruleset：运行时命令，语法验证只需规则定义部分
+        sed -e 's|/etc/nftables.d/\*.nft|'"$WORK"'/nft-check/*.nft|' \
+            -e '/flush ruleset;/d' \
+            "$WORK/nft-check/nftables.nft" > "$WORK/nft-main.nft"
+        if ! $NFT_CMD -c -f "$WORK/nft-main.nft" 2>"$WORK/nft-err"; then
+            echo "[assemble] ❌ nft 语法错误：" >&2
+            cat "$WORK/nft-err" >&2
+            exit 1
+        fi
+        echo "[assemble] nft 语法检查通过"
+    fi
 fi
 
 # ---------- 4. qcow2 转换（compact：稀疏 ext4 → 实际内容大小的 qcow2） ----------
