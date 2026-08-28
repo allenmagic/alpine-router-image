@@ -19,7 +19,7 @@ on:
         type: choice
         required: true
         default: alpine
-        options: [alpine, gentoo]
+        options: [alpine, gentoo, all]
 
 permissions:
   contents: write
@@ -43,31 +43,45 @@ jobs:
             xz-utils file curl ca-certificates wget \
             cpio gzip squashfs-tools kmod e2fsprogs qemu-utils fakeroot nftables
 
-      - name: Build rootfs (${{ inputs.distro }} / base / x86_64)
+      - name: Resolve distro list
+        id: distros
+        run: |
+          if [ "${{ inputs.distro }}" = "all" ]; then
+            echo 'list=["alpine","gentoo"]' >> "$GITHUB_OUTPUT"
+          else
+            echo "list=[\"${{ inputs.distro }}\"]" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build rootfs (base / x86_64)
         run: |
           set -euo pipefail
-          chmod +x "distros/${{ inputs.distro }}/build.sh"
-          sudo -E bash -x "distros/${{ inputs.distro }}/build.sh"
+          for d in $(echo '${{ steps.distros.outputs.list }}' | jq -r '.[]'); do
+            echo "=== 构建 $d rootfs ==="
+            chmod +x "distros/$d/build.sh"
+            sudo -E bash -x "distros/$d/build.sh"
+          done
 
-      - name: Locate rootfs artifact
-        id: artifact
-        run: |
-          D="${{ inputs.distro }}"
-          f="$(ls -1 build/$D/$D-rootfs-minimal.tar.xz 2>/dev/null \
-               || ls -1 build/$D/*-rootfs-minimal.tar.* 2>/dev/null \
-               || ls -1 build/$D/*.tar.* 2>/dev/null | head -n1)"
-          if [ -z "${f:-}" ] || [ ! -e "$f" ]; then
-            echo "未找到 $D 产物" >&2
-            ls -lR build/$D || true
-            exit 1
-          fi
-          echo "path=$f" >> "$GITHUB_OUTPUT"
-
-      - name: Assemble VM image (virt 三件套 + rootfs → qcow2)
+      - name: Locate + Assemble VM image (per distro)
         run: |
           set -euo pipefail
           chmod +x image/assemble.sh image/assemble-rootfs.sh
-          bash image/assemble.sh "${{ steps.artifact.outputs.path }}" dist "${{ inputs.distro }}"
+          rm -rf dist
+          mkdir -p dist
+          for d in $(echo '${{ steps.distros.outputs.list }}' | jq -r '.[]'); do
+            echo "=== 装配 $d ==="
+            f="$(ls -1 build/$d/$d-rootfs-minimal.tar.xz 2>/dev/null \
+                 || ls -1 build/$d/*-rootfs-minimal.tar.* 2>/dev/null \
+                 || ls -1 build/$d/*.tar.* 2>/dev/null | head -n1)"
+            [ -n "${f:-}" ] && [ -e "$f" ] || { echo "未找到 $d 产物" >&2; ls -lR build/$d || true; exit 1; }
+            bash image/assemble.sh "$f" "dist-$d" "$d"
+            # 汇总到 dist/（vmlinuz/initrd 各次产物相同，取第一次即可）
+            cp -n "dist-$d/vmlinuz-virt" "dist-$d/initrd" dist/ 2>/dev/null || true
+            cp "dist-$d/$d-rootfs.qcow2" dist/
+            cat "dist-$d/SHA256SUMS" >> dist/SHA256SUMS.tmp
+          done
+          sort -k2 dist/SHA256SUMS.tmp > dist/SHA256SUMS
+          rm dist/SHA256SUMS.tmp
+          ls -la dist/
 
       - name: Resolve tag
         id: tag
@@ -79,10 +93,7 @@ jobs:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: ${{ steps.tag.outputs.tag }}
           files: |
-            dist/vmlinuz-virt
-            dist/initrd
-            dist/${{ inputs.distro }}-rootfs.qcow2
-            dist/SHA256SUMS
+            dist/*
           draft: false
           prerelease: false
           fail_on_unmatched_files: true
