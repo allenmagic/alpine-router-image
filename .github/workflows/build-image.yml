@@ -27,7 +27,6 @@ permissions:
 
 env:
   ARCH: x86_64
-  INFRA: base
   PACK: "1"
   HOSTNAME_VAL: alpine-router
 

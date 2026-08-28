@@ -6,10 +6,10 @@
 set -eu
 
 ROOT_PASSWORD="${ROOT_PASSWORD:-root}"
-HOSTNAME_VAL="${HOSTNAME_VAL:-nanopi-r3s-alpine}"
+HOSTNAME_VAL="${HOSTNAME_VAL:-alpine-router}"
 MIRROR="${MIRROR:-https://dl-cdn.alpinelinux.org/alpine}"
-SERIAL_DEV="${SERIAL_DEV:-ttyS2}"
-SERIAL_BAUD="${SERIAL_BAUD:-1500000}"
+SERIAL_DEV="${SERIAL_DEV:-ttyS0}"   # VM 串口（R3S 是 ttyS2）
+SERIAL_BAUD="${SERIAL_BAUD:-115200}"
 
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
@@ -18,7 +18,7 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # ============================================================
 #  1. 安装包 —— 按 package.list 三段安装
 # ============================================================
-echo "[setup] === 安装系统包 ==="
+echo "[setup] === 安装系统包（package.list 单段 base）==="
 
 _PKG_LIST_="/package.list"
 if [ -f "${_PKG_LIST_}" ]; then
@@ -31,18 +31,8 @@ if [ -f "${_PKG_LIST_}" ]; then
                 echo "[setup] --- 段: base ---"
                 continue
                 ;;
-            '# ========== sing-box'*)
-                case ",${INFRA:-base}," in *",sing-box,"*) _section_="packages" ;; *) _section_="skip" ;; esac
-                continue
-                ;;
-            '# ========== landscape'*)
-                _section_="skip"
-                continue
-                ;;
             '#'*) continue ;;
         esac
-
-        [ "${_section_}" = "skip" ] && continue
 
         case "${_line_}" in
             '[pm]'*)
@@ -88,10 +78,8 @@ _deploy_cfg_() {
     fi
 }
 
-# 始终部署 base/
+# 部署 base/（唯一配置层）
 _deploy_cfg_ base
-# sing-box 模式叠加部署 sing-box/
-case "${INFRA:-base}" in sing-box) _deploy_cfg_ sing-box ;; esac
 
 find /etc \( -name '*.md' -o -name '*.example' \) -exec rm -f {} + 2>/dev/null || true
 
@@ -102,11 +90,6 @@ echo "[setup] === 安装运行时脚本 ==="
 if [ -f /scripts/network-watchdog.sh ]; then
     install -m 0755 /scripts/network-watchdog.sh /usr/local/bin/network-watchdog
     echo "[setup]   已安装: network-watchdog"
-fi
-
-# 统一路径
-if [ ! -e /usr/local/bin/sing-box ] && [ -x /usr/bin/sing-box ]; then
-    ln -s /usr/bin/sing-box /usr/local/bin/sing-box
 fi
 
 # ============================================================

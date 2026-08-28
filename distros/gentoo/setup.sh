@@ -83,16 +83,11 @@ mkdir -p /etc/portage
 # /etc/portage/gnupg 权限混乱）会导致 acct-* 二进制包安装失败
 rm -rf /etc/portage/binrepos.conf /etc/portage/binrepos.conf.old 2>/dev/null || true
 
-# 检测是否在 QEMU 用户态模拟下运行
-# HOST_ARCH 由 build.sh 传入（宿主的架构），ARCH 为目标架构。
-# 原生构建（宿主架构 == 目标架构）：充分利用全部 CPU 核心（CI runner 亦然）；
-# 跨架构（QEMU）：单核保守（避免 PTY 耗尽/CLONE_THREAD 问题）。
-# 注意：r3s 原版以"宿主 aarch64"判断原生——移植后改为架构相等判断，
-# 否则 x86_64 runner 原生构建 x86_64 会被误判为 QEMU 场景而单核。
+# 原生构建检测：宿主架构 == 目标架构（x86_64 VM 场景恒成立，CI runner 亦然）
+# 原生时全核并行；未来引入跨架构模拟（QEMU）时再降级单核。
 _native() {
     case "${HOST_ARCH:-$(uname -m)}:${ARCH:-x86_64}" in
         x86_64:x86_64|amd64:amd64|amd64:x86_64|x86_64:amd64) return 0 ;;
-        aarch64:aarch64|arm64:arm64|aarch64:arm64|arm64:aarch64) return 0 ;;
     esac
     return 1
 }
@@ -219,18 +214,8 @@ if [ -f "${_PKG_LIST_}" ]; then
                 echo "[setup] --- 段: base ---"
                 continue
                 ;;
-            '# ========== sing-box'*)
-                case ",${INFRA:-base}," in *",sing-box,"*) _section_="packages" ;; *) _section_="skip" ;; esac
-                continue
-                ;;
-            '# ========== landscape'*)
-                _section_="skip"
-                continue
-                ;;
             '#'*) continue ;;
         esac
-
-        [ "${_section_}" = "skip" ] && continue
 
         case "${_line_}" in
             '[pm]'*)
@@ -275,18 +260,8 @@ if [ -f "${_PKG_LIST_}" ]; then
 
         case "${_line_}" in
             '# ========== base'*) _section_="base"; continue ;;
-            '# ========== sing-box'*)
-                case ",${INFRA:-base}," in *",sing-box,"*) _section_="packages" ;; *) _section_="skip" ;; esac
-                continue
-                ;;
-            '# ========== landscape'*)
-                _section_="skip"
-                continue
-                ;;
             '#'*) continue ;;
         esac
-
-        [ "${_section_}" = "skip" ] && continue
 
         case "${_line_}" in
             '[dl@'*)
@@ -423,9 +398,6 @@ _deploy_cfg_() {
 
 # 始终部署 base/
 _deploy_cfg_ base
-# sing-box 模式叠加部署 sing-box/
-case "${INFRA:-base}" in sing-box) _deploy_cfg_ sing-box ;; esac
-
 find "${TARGET_ROOTFS}/etc" \( -name '*.md' -o -name '*.example' \) -exec rm -f {} + 2>/dev/null || true
 
 chmod +x "${TARGET_ROOTFS}"/etc/local.d/*.start 2>/dev/null || true
@@ -437,10 +409,6 @@ if [ -f "${SCRIPT_DIR}/scripts/network-watchdog.sh" ]; then
     echo "[setup]   已安装: network-watchdog"
 fi
 
-# 统一路径
-if [ ! -e "${TARGET_ROOTFS}/usr/local/bin/sing-box" ] && [ -x "${TARGET_ROOTFS}/usr/bin/sing-box" ]; then
-    ln -s /usr/bin/sing-box "${TARGET_ROOTFS}/usr/local/bin/sing-box"
-fi
 
 # ============================================================
 #  3.5. 网络配置（config 文件拷贝完成后替换占位符 + 生成接口配置）

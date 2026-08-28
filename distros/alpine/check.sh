@@ -25,11 +25,6 @@ check_rootfs() {
     _check_bin cloudflared
     _check_bin network-watchdog
 
-    # sing-box 仅在 INFRA=sing-box 时检查
-    case ",${INFRA:-base}," in *",sing-box,"*)
-        _check_bin sing-box
-    ;; esac
-
     # ---------- 2. 配置文件占位符残留 ----------
     _check_no_placeholder() { _f_="$1"
         [ -f "$_f_" ] || { echo "  ✗ $_f_ 不存在!"; _FAIL=$((_FAIL + 1)); return; }
@@ -65,11 +60,6 @@ check_rootfs() {
     _check_openrc tailscale
     _check_openrc cloudflared
     _check_openrc network-watchdog
-
-    # sing-box 仅在 INFRA=sing-box 时检查
-    case ",${INFRA:-base}," in *",sing-box,"*)
-        _check_openrc sing-box
-    ;; esac
 
     # ---------- 结果 ----------
     _TOTAL=$((_OK + _FAIL))

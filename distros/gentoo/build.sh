@@ -27,14 +27,8 @@ BUILD_BASE="${BUILD_BASE:-${BUILD_ROOT}/${DISTRO}}"
 STAGE3_DIR="${STAGE3_DIR:-${BUILD_BASE}/stage3}"         # stage3 解压目录（构建环境）
 ROOTFS="${ROOTFS:-${BUILD_BASE}/gentoo-rootfs}"         # 最终产物目录（轻量 rootfs）
 CACHE_DIR="${CACHE_DIR:-${BUILD_BASE}/cache}"
-ARCH="${ARCH:-x86_64}"                                  # 统一命名（与 CI/workflow 一致）
-
-# Gentoo 的架构命名：aarch64 → arm64，x86_64 → amd64（stage3 路径与镜像目录都用它）
-case "${ARCH}" in
-    aarch64|arm64) GENTOO_ARCH="arm64" ;;
-    x86_64|amd64)  GENTOO_ARCH="amd64" ;;
-    *)             GENTOO_ARCH="${ARCH}" ;;
-esac
+ARCH="x86_64"        # VM 场景固定架构（r3s 的多架构映射已移除）
+GENTOO_ARCH="amd64"  # stage3 路径与镜像目录使用
 
 MIRROR="${MIRROR:-https://distfiles.gentoo.org/releases/${GENTOO_ARCH}/autobuilds}"
 ROOT_PASSWORD="${ROOT_PASSWORD:-root}"
@@ -84,28 +78,11 @@ esac
 # ---------- 创建构建目录树（普通用户，方便清理）----------
 mkdir -p "${BUILD_BASE}" "${CACHE_DIR}" "${WORKDIR}"
 
-# ---------- 跨架构预检 ----------
-HOST_ARCH="$(uname -m)"
-if [ "${ARCH}" = "aarch64" ] && [ "${HOST_ARCH}" != "aarch64" ] && [ "${HOST_ARCH}" != "arm64" ]; then
-    BINFMT=/proc/sys/fs/binfmt_misc/qemu-aarch64
-    if [ ! -e "${BINFMT}" ] || ! grep -q '^enabled' "${BINFMT}" 2>/dev/null; then
-        echo "错误：宿主架构为 ${HOST_ARCH}，但未启用 aarch64 的 binfmt/qemu。" >&2
-        echo "构建 arm64 rootfs 将失败。请先执行：" >&2
-        echo "  sudo apt-get install -y qemu-user-static binfmt-support" >&2
-        echo "  docker run --rm --privileged tonistiigi/binfmt --install arm64" >&2
-        echo "或在原生 aarch64 环境（如 GitHub ubuntu-24.04-arm runner）构建。" >&2
-        exit 1
-    fi
-    if ! grep -q 'flags:.*F' "${BINFMT}" 2>/dev/null; then
-        echo "警告：qemu-aarch64 未带 F flag，跨架构 chroot 可能找不到解释器。" >&2
-        echo "建议用 tonistiigi/binfmt 重新注册：" >&2
-        echo "  docker run --rm --privileged tonistiigi/binfmt --install arm64" >&2
-    fi
-fi
-echo "[gentoo] 跨架构预检通过（宿主 ${HOST_ARCH}）"
+# 架构固定 x86_64：宿主与目标同构，无需 binfmt/qemu 预检
+echo "[gentoo] 架构：${ARCH}（宿主 $(uname -m)，同构原生构建）"
 
 # ---------- 第一步：下载 stage3-<arch>-openrc ----------
-# GENTOO_ARCH 已在参数区定义（aarch64→arm64、x86_64→amd64）
+# GENTOO_ARCH 已在参数区定义（固定 amd64）
 echo "[gentoo] 1. 解析最新 stage3-${GENTOO_ARCH}-musl-openrc 版本 ..."
 LATEST_TXT="$(wget -t 2 -T 30 -qO- "${MIRROR}/latest-stage3-${GENTOO_ARCH}-musl-openrc.txt" 2>/dev/null || true)"
 if [ -z "${LATEST_TXT}" ]; then
@@ -190,7 +167,6 @@ cp -f "${SETUP_SCRIPT}" "${STAGE3_DIR}/setup.sh"
 chmod +x "${STAGE3_DIR}/setup.sh"
 chroot_run "${STAGE3_DIR}" /usr/bin/env \
     DISTRO="${DISTRO}" \
-    INFRA="${INFRA:-base}" \
     ROOT_PASSWORD="${ROOT_PASSWORD}" \
     HOSTNAME_VAL="${HOSTNAME_VAL}" \
     TARGET_ROOTFS="/gentoo-rootfs" \

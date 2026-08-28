@@ -5,7 +5,7 @@
 #
 
 enable_router_services() {
-    echo "[service] === 启用路由器服务 (INFRA=${INFRA:-base}) ==="
+    echo "[service] === 启用路由器服务 ==="
 
     # --- 系统基础服务 ---
     _enable_service bootmisc boot
@@ -31,14 +31,6 @@ enable_router_services() {
     _enable_service network-watchdog
     _enable_service keepalived
 
-    # --- 根据 INFRA 启用组件服务 ---
-    case ",${INFRA:-base}," in
-        *",sing-box,"*)
-            echo "[service] --- sing-box 服务 ---"
-            _enable_singbox
-            ;;
-    esac
-
     echo "[service] === 服务启用完成 ==="
 }
 
@@ -58,12 +50,6 @@ _enable_service() {
 _enable_nftables() {
     echo "[service] 启用 nftables 开机加载 ..."
     rc-update add nftables default 2>/dev/null || true
-}
-
-# sing-box 服务启用
-_enable_singbox() {
-    echo "[service] 启用 sing-box ..."
-    rc-update add sing-box default 2>/dev/null || true
 }
 
 # cloudflared 服务启用

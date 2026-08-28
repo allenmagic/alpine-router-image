@@ -6,7 +6,7 @@
 #
 
 enable_router_services() {
-    echo "[service] === 启用路由器服务 (INFRA=${INFRA:-base}) ==="
+    echo "[service] === 启用路由器服务 ==="
 
     # --- 系统基础服务 ---
     _enable_service bootmisc boot
@@ -40,14 +40,6 @@ enable_router_services() {
 
     # 5. 监控服务
     _enable_service network-watchdog
-
-    # --- 根据 INFRA 启用组件服务 ---
-    case ",${INFRA:-base}," in
-        *",sing-box,"*)
-            echo "[service] --- sing-box 服务 ---"
-            _enable_service sing-box
-            ;;
-    esac
 
     # 移除 headless 路由器不需要的键盘服务（依赖未安装的 kbd 包）
     rm -f "${TARGET_ROOTFS}/etc/runlevels/boot/keymaps" \

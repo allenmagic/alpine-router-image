@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# distros/alpine/build.sh —— 构建 Alpine aarch64 rootfs
+# distros/alpine/build.sh —— 构建 Alpine x86_64 rootfs
 # 从 dl-cdn.alpinelinux.org 下载 minirootfs tarball 并 chroot 配置
 # 产物落在仓库内 build/alpine/（被 .gitignore 排除）
 #
@@ -26,9 +26,9 @@ BUILD_BASE="${BUILD_BASE:-${BUILD_ROOT}/${DISTRO}}"
 ROOTFS="${ROOTFS:-${BUILD_BASE}/alpine-rootfs}"
 CACHE_DIR="${CACHE_DIR:-${BUILD_BASE}/cache}"
 MIRROR="${MIRROR:-https://dl-cdn.alpinelinux.org/alpine}"
-ARCH="${ARCH:-aarch64}"
+ARCH="x86_64"        # VM 场景固定架构（r3s 的多架构映射已移除）
 ROOT_PASSWORD="${ROOT_PASSWORD:-root}"
-HOSTNAME_VAL="${HOSTNAME_VAL:-nanopi-r3s-alpine}"
+HOSTNAME_VAL="${HOSTNAME_VAL:-alpine-router}"
 SETUP_SCRIPT="${SCRIPT_DIR}/setup.sh"
 PACK="${PACK:-0}"                                            # 1=构建后顺带打包
 
@@ -69,25 +69,8 @@ case "${WORKDIR}" in
         exit 1 ;;
 esac
 
-# ---------- 跨架构预检（仅当目标 aarch64 且宿主非 arm 时才需要 qemu/binfmt）----------
-HOST_ARCH="$(uname -m)"
-if [ "${ARCH}" = "aarch64" ] && [ "${HOST_ARCH}" != "aarch64" ] && [ "${HOST_ARCH}" != "arm64" ]; then
-    BINFMT=/proc/sys/fs/binfmt_misc/qemu-aarch64
-    if [ ! -e "${BINFMT}" ] || ! grep -q '^enabled' "${BINFMT}" 2>/dev/null; then
-        echo "错误：宿主架构为 ${HOST_ARCH}，但未启用 aarch64 的 binfmt/qemu。" >&2
-        echo "构建 arm64 rootfs 将失败。请先执行：" >&2
-        echo "  sudo apt-get install -y qemu-user-static binfmt-support" >&2
-        echo "  docker run --rm --privileged tonistiigi/binfmt --install arm64" >&2
-        echo "或在原生 aarch64 环境（如 GitHub ubuntu-24.04-arm runner）构建。" >&2
-        exit 1
-    fi
-    if ! grep -q 'flags:.*F' "${BINFMT}" 2>/dev/null; then
-        echo "警告：qemu-aarch64 未带 F flag，跨架构 chroot 可能找不到解释器。" >&2
-        echo "建议用 tonistiigi/binfmt 重新注册：" >&2
-        echo "  docker run --rm --privileged tonistiigi/binfmt --install arm64" >&2
-    fi
-fi
-echo "[alpine] 跨架构预检通过（宿主 ${HOST_ARCH}）"
+# 架构固定 x86_64：宿主与目标同构，无需 binfmt/qemu 预检
+echo "[alpine] 架构：${ARCH}（宿主 $(uname -m)，同构原生构建）"
 
 # ---------- 第一步：下载 alpine-minirootfs ----------
 echo "[alpine] 1. 解析最新 minirootfs 版本 ..."
@@ -130,11 +113,6 @@ cp -f "${REPO_ROOT}/lib/download-helpers.sh" "${ROOTFS}/download-helpers.sh"
 cp -r "${REPO_ROOT}/base" "${ROOTFS}/base"
 cp -r "${REPO_ROOT}/scripts" "${ROOTFS}/scripts"
 cp -f "${SCRIPT_DIR}/package.list" "${ROOTFS}/package.list"
-# 按目标架构修正二进制下载 URL（cloudflared 等按架构分发的包）
-case "${ARCH}" in
-    x86_64)  sed -i 's|cloudflared-linux-arm64|cloudflared-linux-amd64|g' "${ROOTFS}/package.list" ;;
-    aarch64) sed -i 's|cloudflared-linux-amd64|cloudflared-linux-arm64|g' "${ROOTFS}/package.list" ;;
-esac
 cp -f "${SCRIPT_DIR}/service.sh" "${ROOTFS}/service.sh"
 cp -f "${SCRIPT_DIR}/network.sh" "${ROOTFS}/network.sh"
 cp -f "${SCRIPT_DIR}/check.sh" "${ROOTFS}/check.sh"
@@ -161,7 +139,6 @@ cp -f "${SETUP_SCRIPT}" "${ROOTFS}/setup.sh"
 chmod +x "${ROOTFS}/setup.sh"
 chroot_run "${ROOTFS}" /usr/bin/env \
     DISTRO="${DISTRO}" \
-    INFRA="${INFRA:-base}" \
     ROOT_PASSWORD="${ROOT_PASSWORD}" \
     HOSTNAME_VAL="${HOSTNAME_VAL}" \
     MIRROR="${MIRROR}" \

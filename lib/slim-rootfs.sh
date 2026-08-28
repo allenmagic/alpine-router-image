@@ -14,13 +14,7 @@
 #   sudo ./lib/slim-rootfs.sh <rootfs目录> [输出文件名]
 #   sudo STRIP=aarch64-linux-gnu-strip ./lib/slim-rootfs.sh ./void-rootfs out.tar.xz
 #
-# 架构识别 / strip 工具选择委托 lib/arch-detect.sh。
 set -euo pipefail
-
-# ---------- 依赖：架构识别函数库（同目录定位）----------
-_SLIM_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=arch-detect.sh
-. "${_SLIM_LIB_DIR}/arch-detect.sh"
 
 # ---------- 可配置参数 ----------
 ROOTFS="${1:-rootfs}"                              # rootfs 目录
@@ -58,19 +52,12 @@ if mount | grep -q " ${ROOTFS_ABS}/"; then
     exit 1
 fi
 
-# ---------- 架构 & strip 工具选择（委托 arch-detect）----------
-HOST_ARCH="$(arch_host)"
-TARGET_ARCH="$(arch_of_rootfs "${ROOTFS_ABS}")"   # 探测不到回传空串
+# ---------- 架构（VM 场景固定 x86_64，无跨架构分支）----------
+HOST_ARCH="$(uname -m)"
+TARGET_ARCH="x86_64"
 
-# strip 命令：用户显式 STRIP 优先；否则按目标架构自动选
-if [[ -z "${STRIP:-}" ]]; then
-    if [[ -n "${TARGET_ARCH}" ]]; then
-        STRIP="$(arch_strip_cmd "${TARGET_ARCH}")"
-    else
-        # 目标架构未知：退回本机 strip（保守）
-        STRIP="strip"
-    fi
-fi
+# strip 命令：用户显式 STRIP 优先；否则用本机 strip
+STRIP="${STRIP:-strip}"
 
 # strip 工具存在性检查（缺失则跳过第 3 步而非中断）
 HAS_STRIP=1
@@ -79,13 +66,6 @@ if ! command -v "${STRIP}" >/dev/null 2>&1; then
     HAS_STRIP=0
 fi
 
-# 跨架构 strip 有效性提示（委托 arch-detect 判断）
-if [[ "${HAS_STRIP}" -eq 1 && -n "${TARGET_ARCH}" ]] \
-   && ! arch_strip_effective "${STRIP}" "${TARGET_ARCH}"; then
-    echo "提示：跨架构构建（${HOST_ARCH} → ${TARGET_ARCH}）但仅有本机 strip，strip 对目标 ELF 可能无效（体积不会减小）。" >&2
-    echo "      本地若要真正生效：apt-get install binutils-${TARGET_ARCH}-linux-gnu（或安装 llvm）。" >&2
-    echo "      CI 在原生 ${TARGET_ARCH} runner 上则无此问题。" >&2
-fi
 
 # file 命令检查（用于精确识别 ELF，缺失则降级）
 HAS_FILE=1

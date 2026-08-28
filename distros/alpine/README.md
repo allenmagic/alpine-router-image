@@ -20,15 +20,9 @@ sudo BUILD_BASE=/tmp/my-build ROOT_PASSWORD=secret \
 
 ## 包列表
 
-`distros/alpine/package.list` — 三段式：
-
-| 段 | 内容 |
-|----|------|
-| base | openssh, chrony, curl, bash, busybox-openrc, dnsmasq, nftables, tailscale, cloudflared(\*)  |
-| sing-box | sing-box |
-| landscape | （待定） |
-
-(\*) cloudflared 通过 `[dl@URL]` 下载安装。
+`distros/alpine/package.list` — 单段 base（无 INFRA 分段）：
+ssh/chrony/dnsmasq/nftables/tailscale/keepalived/fastfetch 等；
+cloudflared 通过 `[dl@URL]` 下载安装。
 
 ## 镜像源说明
 

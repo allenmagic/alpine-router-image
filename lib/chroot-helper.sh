@@ -4,21 +4,14 @@
 # 可被任意发行版 rootfs 构建脚本 source 复用
 #
 # 用法：
-#   source lib/chroot-helper.sh             # 会自动 source 同目录 arch-detect.sh
-#   chroot_enter /path/to/rootfs            # 挂载伪文件系统 + 配置 DNS / qemu
+#   source lib/chroot-helper.sh
+#   chroot_enter /path/to/rootfs            # 挂载伪文件系统 + 配置 DNS
 #   chroot_run   /path/to/rootfs /setup.sh  # 在 chroot 内执行命令
 #   chroot_exit  /path/to/rootfs            # 卸载（通常由 trap 自动调用）
 #
 # 设计为可重复 source，不污染调用方的 set 选项。
 # 注意：本助手内的 mount 均做容错（失败仅警告、跳过），
 #       避免被调用方的 `set -e` 放大成整脚本静默退出。
-# 架构识别 / 跨架构判断已抽离至 arch-detect.sh，本文件不再自行判断架构。
-
-# --- 依赖：架构识别函数库（同目录定位，免依赖调用方 CWD）---
-_CHROOT_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=arch-detect.sh
-. "${_CHROOT_LIB_DIR}/arch-detect.sh"
-
 # 需要时挂载的伪文件系统列表（按挂载顺序）
 # 说明：不单独挂 dev/pts —— /dev 已整体 --bind（含 pts），
 #       在 WSL 等环境单独 bind /dev/pts 常失败且多余。
@@ -29,30 +22,6 @@ _CHROOT_VFS="dev proc sys run shm"
 # 状态文件：记录某个 rootfs 实际挂载了哪些点（供逆序卸载）
 _chroot_state_file() {
     echo "/tmp/.chroot-mounts-$(echo "$1" | md5sum | cut -d' ' -f1)"
-}
-
-# ---------------------------------------------------------------------------
-# SETUP（仅在确认跨架构后调用）：注入 qemu-user-static 到 rootfs
-#   $1 = rootfs，$2 = 目标架构（aarch64 / x86_64 ...）
-# 架构是否跨、binfmt 是否就绪等判断由 arch-detect.sh 提供。
-# ---------------------------------------------------------------------------
-_chroot_setup_qemu() {
-    local rootfs="$1" target="$2"
-    local qemu_bin
-    qemu_bin="$(arch_qemu_static_name "$target")"
-
-    # binfmt 含 F(fix-binary)：内核已固定解释器，chroot 内无需注入任何 qemu 二进制
-    if arch_qemu_binfmt_ready "$target"; then
-        echo "  [qemu] binfmt 含 F flag，无需注入 $qemu_bin"
-        return 0
-    fi
-
-    if command -v "$qemu_bin" >/dev/null 2>&1; then
-        cp -f "$(command -v "$qemu_bin")" "$rootfs/usr/bin/" 2>/dev/null || true
-        echo "  [qemu] 已注入 $qemu_bin（跨架构 chroot）"
-    else
-        echo "  [警告] 跨架构 chroot 但未找到 $qemu_bin（若 binfmt 无 F flag 将失败）" >&2
-    fi
 }
 
 # --- 挂载并进入准备 ---
@@ -114,17 +83,6 @@ chroot_enter() {
     # DNS：让 chroot 内可联网
     [ -f /etc/resolv.conf ] && cp -f /etc/resolv.conf "$rootfs/etc/resolv.conf" 2>/dev/null || true
 
-    # 跨架构 qemu：先 check 再 setup —— 架构判断全部委托 arch-detect。
-    # 原生架构（如 aarch64 宿主构建 aarch64）arch_need_qemu 返回 1，直接跳过。
-    local _host _target
-    _host="$(arch_host)"
-    _target="$(arch_of_rootfs "$rootfs")"
-    if arch_need_qemu "$_host" "$_target"; then
-        _chroot_setup_qemu "$rootfs" "$_target"
-    else
-        echo "  [qemu] 原生架构（$_host），无需 qemu"
-    fi
-
     return 0
 }
 
@@ -160,10 +118,6 @@ chroot_exit() {
             umount -l "$rootfs/$vfs" 2>/dev/null || umount -R "$rootfs/$vfs" 2>/dev/null || true
         done
     fi
-
-    # 清理可能注入的 qemu（两种架构都试删，rm -f 不存在也不报错）
-    rm -f "$rootfs/usr/bin/qemu-aarch64-static" 2>/dev/null || true
-    rm -f "$rootfs/usr/bin/qemu-x86_64-static"  2>/dev/null || true
 }
 
 # --- 直接执行（非 source）时提示 ---
