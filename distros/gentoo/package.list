@@ -29,6 +29,6 @@
 [pm] app-misc/fastfetch
 [pm] net-dns/dnsmasq
 [pm] net-firewall/nftables
-[pm] net-misc/keepalived
+[pm] sys-cluster/keepalived
 [pm] net-vpn/tailscale
 [dl@https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64] cloudflared
