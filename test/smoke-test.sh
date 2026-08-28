@@ -17,6 +17,7 @@
 #   --backend NAME    qemu | cloud-hypervisor（默认 qemu）
 #   --assets-dir DIR  资产缓存目录（默认 <仓库>/build/smoke-assets，已被 .gitignore 忽略）
 #   --no-download     跳过下载，只用缓存里已有的文件
+#   --force-download  忽略缓存，强制重新下载（重 CI 后同名 assets 更新时用）
 #   --verify-only     只下载 + 校验 sha256，不启动
 #   --loglevel N      追加内核参数 loglevel=N（0-7，默认不追加；3 可屏蔽 nft warn 级日志对串口的干扰）
 #   --proxy           下载走 proxychains 代理（默认 auto：装了 proxychains 就自动用）
@@ -36,6 +37,7 @@ TAG=""                                        # 空 = 自动探测
 BACKEND="qemu"
 ASSETS_DIR="${REPO_ROOT}/build/smoke-assets"
 DO_DOWNLOAD=1
+FORCE_DOWNLOAD=0   # --force-download：忽略缓存，强制重新下载
 VERIFY_ONLY=0
 LOGLEVEL=""      # 空 = 不追加 loglevel；如 --loglevel 3
 PROXY_MODE="auto"   # auto | on | off（下载是否走 proxychains）
@@ -60,6 +62,7 @@ while [ $# -gt 0 ]; do
         --assets-dir) ASSETS_DIR="${2:?--assets-dir 需要值}"; shift 2 ;;
         --repo)       REPO_SLUG="${2:?--repo 需要值}"; shift 2 ;;
         --no-download) DO_DOWNLOAD=0; shift ;;
+        --force-download) FORCE_DOWNLOAD=1; shift ;;
         --verify-only) VERIFY_ONLY=1; shift ;;
         --loglevel)    LOGLEVEL="${2:?--loglevel 需要值(0-7)}"; shift 2 ;;
         --proxy)       PROXY_MODE="on"; shift ;;
@@ -135,7 +138,9 @@ fetch() {
 verify() {
     local distro="$1"
     local sums="${ASSETS_DIR}/SHA256SUMS"
-    [ -f "$sums" ] || fetch "$BASE/SHA256SUMS" "$sums"
+    if [ "$FORCE_DOWNLOAD" = 1 ] || [ ! -f "$sums" ]; then
+        fetch "$BASE/SHA256SUMS" "$sums"
+    fi
 
     local f h
     for f in vmlinuz-virt initrd "${distro}-rootfs.qcow2"; do
@@ -153,7 +158,9 @@ download() {
     local distro="$1"
     local f
     for f in vmlinuz-virt initrd "${distro}-rootfs.qcow2"; do
-        if [ -f "${ASSETS_DIR}/${f}" ]; then
+        if [ "$FORCE_DOWNLOAD" = 1 ]; then
+            fetch "$BASE/$f" "${ASSETS_DIR}/${f}"
+        elif [ -f "${ASSETS_DIR}/${f}" ]; then
             log "已缓存 ${f}，跳过下载"
         else
             fetch "$BASE/$f" "${ASSETS_DIR}/${f}"
