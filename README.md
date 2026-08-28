@@ -59,7 +59,7 @@ ARCH=x86_64 PACK=1 sudo -E bash distros/alpine/build.sh
 # 产物：dist/{vmlinuz-virt, initrd, alpine-router-rootfs.qcow2, SHA256SUMS}
 ```
 
-CI 手动触发后：构建 → release 上传（tag `alpine-router-image-YYYYMMDD`）→
+CI 手动触发后：构建 → release 上传（tag `microvm-router-vm-YYYYMMDD`）→
 自动同步 flake 模块 sha256 并推送。
 
 ## 关键设计

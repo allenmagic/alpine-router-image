@@ -1,4 +1,4 @@
-name: Build Alpine Router VM Image
+name: microvm-router-build
 
 # 手动触发：构建 Alpine rootfs（移植自 nanopi-r3s-rootfs，单一发行版链）
 # + 装配可启动 VM 镜像（Alpine 官方 virt 三件套）→ 上传 release asset
@@ -71,7 +71,7 @@ jobs:
 
       - name: Resolve tag
         id: tag
-        run: echo "tag=alpine-router-image-$(date +%Y%m%d)" >> "$GITHUB_OUTPUT"
+        run: echo "tag=microvm-router-vm-$(date +%Y%m%d)" >> "$GITHUB_OUTPUT"
 
       - name: Create / Update Release
         uses: softprops/action-gh-release@v3

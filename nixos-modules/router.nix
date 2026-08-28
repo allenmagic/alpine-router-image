@@ -27,7 +27,7 @@ let
 
   # 本仓库 CI release（升级时同步改 tag 与 sha256，由 CI 的
   # sync-flake-sha.py 按 release 的 SHA256SUMS 条目自动更新）
-  imageRelease = "alpine-router-image-20260828";
+  imageRelease = "microvm-router-vm-20260828";
   releaseBase = "https://github.com/allenmagic/alpine-router-image/releases/download/${imageRelease}";
 
   # rootfs 资产表（按发行版；vmlinuz-virt/initrd 是发行版无关的共享资产）。
