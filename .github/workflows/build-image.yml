@@ -1,12 +1,13 @@
 name: microvm-router-build
 
-# 手动触发：构建 Alpine rootfs（移植自 nanopi-r3s-rootfs，单一发行版链）
-# + 装配可启动 VM 镜像（Alpine 官方 virt 三件套）→ 上传 release asset
+# 手动触发：按发行版矩阵并行构建 rootfs（musl-openrc 双发行版链）
+# + 装配可启动 VM 镜像（Alpine 官方 virt 三件套，发行版无关共享）
+# → 汇总上传 release asset，并自动同步 flake 模块的 tag+sha256。
 #
-# 产物（tag: alpine-router-image-YYYYMMDD）：
-#   alpine-router-rootfs.qcow2  VM 根磁盘（ext4 内含 rootfs + modloop 模块）
-#   vmlinuz-virt / initrd       客户机内核与 initramfs（注入 ext4 依赖链）
-#   SHA256SUMS                  qnap-nixos-nas 的 fetchurl sha256 来源
+# 产物（tag: microvm-router-vm-YYYYMMDD）：
+#   <distro>-rootfs.qcow2        VM 根磁盘（ext4 内含 rootfs + modloop 模块）
+#   vmlinuz-virt / initrd        客户机内核与 initramfs（注入 ext4 依赖链，共享）
+#   SHA256SUMS                   消费端 fetchurl 的 sha256 来源（多发行版条目）
 #
 # 注：不使用 CI secrets 注入密钥——密钥由 NAS 宿主的 alpine-router-deploy
 # 在部署时注入，绝不进入公开 release 产物。
@@ -31,8 +32,32 @@ env:
   HOSTNAME_VAL: alpine-router
 
 jobs:
-  build:
+  prepare:
     runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - id: set
+        run: |
+          if [ "${{ inputs.distro }}" = "all" ]; then
+            DISTROS='["alpine","gentoo"]'
+          else
+            DISTROS='["${{ inputs.distro }}"]'
+          fi
+          INCLUDE="["
+          for D in $(echo "${DISTROS}" | jq -r '.[]'); do
+            INCLUDE="${INCLUDE}{\"distro\":\"${D}\"},"
+          done
+          INCLUDE="${INCLUDE%,}]"
+          echo "matrix={\"include\":${INCLUDE}}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false   # 单一发行版失败不影响其他发行版
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    name: build-${{ matrix.distro }}
     steps:
       - uses: actions/checkout@v6
 
@@ -43,45 +68,55 @@ jobs:
             xz-utils file curl ca-certificates wget \
             cpio gzip squashfs-tools kmod e2fsprogs qemu-utils fakeroot nftables
 
-      - name: Resolve distro list
-        id: distros
-        run: |
-          if [ "${{ inputs.distro }}" = "all" ]; then
-            echo 'list=["alpine","gentoo"]' >> "$GITHUB_OUTPUT"
-          else
-            echo "list=[\"${{ inputs.distro }}\"]" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Build rootfs (base / x86_64)
+      - name: Build rootfs (${{ matrix.distro }} / base / x86_64)
         run: |
           set -euo pipefail
-          for d in $(echo '${{ steps.distros.outputs.list }}' | jq -r '.[]'); do
-            echo "=== 构建 $d rootfs ==="
-            chmod +x "distros/$d/build.sh"
-            sudo -E bash -x "distros/$d/build.sh"
-          done
+          chmod +x "distros/${{ matrix.distro }}/build.sh"
+          sudo -E bash -x "distros/${{ matrix.distro }}/build.sh"
 
-      - name: Locate + Assemble VM image (per distro)
+      - name: Locate + Assemble VM image
         run: |
           set -euo pipefail
           chmod +x image/assemble.sh image/assemble-rootfs.sh
-          rm -rf dist
-          mkdir -p dist
-          for d in $(echo '${{ steps.distros.outputs.list }}' | jq -r '.[]'); do
-            echo "=== 装配 $d ==="
-            f="$(ls -1 build/$d/$d-rootfs-minimal.tar.xz 2>/dev/null \
-                 || ls -1 build/$d/*-rootfs-minimal.tar.* 2>/dev/null \
-                 || ls -1 build/$d/*.tar.* 2>/dev/null | head -n1)"
-            [ -n "${f:-}" ] && [ -e "$f" ] || { echo "未找到 $d 产物" >&2; ls -lR build/$d || true; exit 1; }
-            bash image/assemble.sh "$f" "dist-$d" "$d"
-            # 汇总到 dist/（vmlinuz/initrd 各次产物相同，取第一次即可）
-            cp -n "dist-$d/vmlinuz-virt" "dist-$d/initrd" dist/ 2>/dev/null || true
-            cp "dist-$d/$d-rootfs.qcow2" dist/
-            cat "dist-$d/SHA256SUMS" >> dist/SHA256SUMS.tmp
-          done
-          sort -k2 dist/SHA256SUMS.tmp > dist/SHA256SUMS
-          rm dist/SHA256SUMS.tmp
+          d="${{ matrix.distro }}"
+          f="$(ls -1 build/$d/$d-rootfs-minimal.tar.xz 2>/dev/null \
+               || ls -1 build/$d/*-rootfs-minimal.tar.* 2>/dev/null \
+               || ls -1 build/$d/*.tar.* 2>/dev/null | head -n1)"
+          [ -n "${f:-}" ] && [ -e "$f" ] || { echo "未找到 $d 产物" >&2; ls -lR build/$d || true; exit 1; }
+          bash image/assemble.sh "$f" dist "$d"
+          # SHA256SUMS 按发行版命名，供 release job 合并（避免同名覆盖）
+          mv dist/SHA256SUMS "dist/SHA256SUMS.$d"
           ls -la dist/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: vm-image-${{ matrix.distro }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    needs: build
+    if: ${{ always() && contains(needs.build.result, 'success') }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Merge SHA256SUMS
+        run: |
+          sort -k2 dist/SHA256SUMS.* > dist/SHA256SUMS
+          rm dist/SHA256SUMS.*
+          echo "=== 汇总资产 ==="
+          ls -la dist/
+          echo "=== SHA256SUMS ==="
+          cat dist/SHA256SUMS
 
       - name: Resolve tag
         id: tag
@@ -93,7 +128,10 @@ jobs:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: ${{ steps.tag.outputs.tag }}
           files: |
-            dist/*
+            dist/vmlinuz-virt
+            dist/initrd
+            dist/*-rootfs.qcow2
+            dist/SHA256SUMS
           draft: false
           prerelease: false
           fail_on_unmatched_files: true
