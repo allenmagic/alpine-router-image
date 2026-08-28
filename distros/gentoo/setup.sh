@@ -79,17 +79,24 @@ _NPROC_="$(nproc 2>/dev/null || echo 4)"
 mkdir -p /etc/portage
 
 # 检测是否在 QEMU 用户态模拟下运行
-# HOST_ARCH 由 build.sh 传入（宿主的架构）
-# 若宿主本身是 aarch64，则为原生 ARM64 编译，可安全多核
-# 若宿主是 x86_64 等，则为 QEMU 跨架构编译，需限制并发
-if [ "${HOST_ARCH:-}" = "aarch64" ] || [ "${HOST_ARCH:-}" = "arm64" ]; then
-    _NATIVE_ARM_="1"
+# HOST_ARCH 由 build.sh 传入（宿主的架构），ARCH 为目标架构。
+# 原生构建（宿主架构 == 目标架构）：充分利用全部 CPU 核心（CI runner 亦然）；
+# 跨架构（QEMU）：单核保守（避免 PTY 耗尽/CLONE_THREAD 问题）。
+# 注意：r3s 原版以"宿主 aarch64"判断原生——移植后改为架构相等判断，
+# 否则 x86_64 runner 原生构建 x86_64 会被误判为 QEMU 场景而单核。
+_native() {
+    case "${HOST_ARCH:-$(uname -m)}:${ARCH:-x86_64}" in
+        x86_64:x86_64|amd64:amd64|amd64:x86_64|x86_64:amd64) return 0 ;;
+        aarch64:aarch64|arm64:arm64|aarch64:arm64|arm64:aarch64) return 0 ;;
+    esac
+    return 1
+}
+if _native; then
     _MAKEOPTS_="-j${_NPROC_}"
     _EMERGE_JOBS_="${_NPROC_}"
-    # 原生 ARM64：启用 sandbox 保证构建正确性
+    # 原生构建：启用 sandbox 保证构建正确性
     _FEATURES_="getbinpkg -binpkg-verify-signature"
 else
-    _NATIVE_ARM_="0"
     _MAKEOPTS_="-j1"
     _EMERGE_JOBS_="1"
     # QEMU/WSL2：禁用 sandbox（/dev/pts 无法正常挂载，PTY 会耗尽）
@@ -102,7 +109,7 @@ cat > /etc/portage/make.conf <<EOF
 # 加上会导致 distfiles/distfiles 重复路径，部分包（如 netifrc）下载失败
 GENTOO_MIRRORS="${GENTOO_MIRROR_BASE}"
 
-# 编译选项（原生 ARM64: 多核 / QEMU: 单核避免 PTY/CLONE_THREAD 问题）
+# 编译选项（原生: 多核 / QEMU: 单核避免 PTY/CLONE_THREAD 问题）
 MAKEOPTS="${_MAKEOPTS_}"
 EMERGE_DEFAULT_OPTS="--jobs=${_EMERGE_JOBS_} --quiet-build"
 
