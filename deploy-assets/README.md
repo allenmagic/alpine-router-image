@@ -33,7 +33,7 @@ sudo chmod 600 /etc/libvirt/alpine-router.env
 
 `alpine-router-deploy` 把该文件 scp 到 VM 并重命名为 `./env`，install.sh source 后：
 
-- `SSH_PUBLIC_KEY` → `/root/.ssh/authorized_keys`（r3s 出厂 sshd 默认拒绝 root 密码登录，公钥是唯一免密通道；**支持多个 key**：每行一个公钥，如部署机 key + 个人设备 key）
+- `SSH_PUBLIC_KEY` → `/root/.ssh/authorized_keys`（镜像出厂 sshd 默认拒绝 root 密码登录，公钥是唯一免密通道；**支持多个 key**：每行一个公钥，如部署机 key + 个人设备 key）
 - `TAILSCALE_AUTH_KEY` → `/etc/tailscale/authkey`（config.json 通过 `authKey: file:` 引用），随后自动 `tailscale up`
 - `CLOUDFLARED_TOKEN` → `/etc/cloudflared/config.yml`
 
@@ -42,8 +42,9 @@ install.sh 结束（含失败）时删除 env 文件。不提供密钥则跳过�
 ## 更新配置
 
 **改配置**：改 [alpine-router-image](https://github.com/allenmagic/alpine-router-image)
-的 `base/` 或 `network.env` → 触发其 CI → NAS 侧 `microvm/router.nix` 更新 tag 与
-三处 sha256 → `nixos-rebuild switch` → 重启 VM（disk-prep 自动重装状态盘）→
+的 `base/` 或 `network.env` → 触发其 CI → CI 自动把 release 的 tag + sha256 同步进
+`nixos-modules/router.nix`（`sync-flake-sha.py`，无需手工）→ NAS 侧
+`nix flake update` → `nixos-rebuild switch` → 重启 VM（disk-prep 自动重装状态盘）→
 `alpine-router-deploy` 注入密钥。
 
 **改密钥**：编辑 `/etc/libvirt/alpine-router.env` → `alpine-router-deploy`。
@@ -55,4 +56,5 @@ install.sh 结束（含失败）时删除 env 文件。不提供密钥则跳过�
 | `SSH_PUBLIC_KEY` | `/etc/libvirt/alpine-router.env` | `ssh-keygen -t ed25519 -f /etc/libvirt/alpine-router-deploy` 后填 `.pub` 内容 |
 | `TAILSCALE_AUTH_KEY` | 同上 | Tailscale 管理后台生成一次性 key |
 | `CLOUDFLARED_TOKEN` | 同上 | Cloudflare Zero Trust 隧道页获取 |
-| 镜像三处 sha256 | `microvm/router.nix` | 取 alpine-router-image release 的 `SHA256SUMS`（当前已填 20260826 release 真实值，无需替换） |
+
+镜像 tag 与三处 sha256 无需手工替换——由 CI 的 `sync-flake-sha.py` 自动同步。

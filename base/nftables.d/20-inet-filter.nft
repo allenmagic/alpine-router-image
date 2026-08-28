@@ -60,7 +60,7 @@ table inet filter {
         iifname @wan_interfaces udp dport $TS_PORT accept;
 
         # 超限流量：记录日志并加入黑名单后丢弃
-        # （v4/v6 规则一致，直接按新建 TCP SYN 限流；WG/TS 是 UDP 端口，不参与 TCP 规则）
+        # （v4/v6 规则一致，直接按新建 TCP SYN 限流；TS 是 UDP 端口，不参与 TCP 规则）
         iifname @wan_interfaces ct state new tcp flags syn \
             limit rate over 100/second burst 200 packets \
             log prefix "WAN_SYN_FLOOD_v4: " \
@@ -156,6 +156,12 @@ table inet filter {
 
         # --------------------- LAN -> LAN 转发 -----------------
         iifname @lan_interfaces oifname @lan_interfaces accept;
+
+        # ------------------ LAN -> WAN（直连 NAT） -----------------
+        # 浮动网关架构下的必经路径：
+        #   yunshu 容器（MASTER）直连流量经上游网关（本 VM）出 WAN；
+        #   VM 接管 .254 降级为纯直连 NAT 时同样走此规则。
+        iifname @lan_interfaces oifname @wan_interfaces accept;
 
         # ---------------------- VPN Routing --------------------
         iifname @vpn_interfaces oifname @lan_interfaces accept;

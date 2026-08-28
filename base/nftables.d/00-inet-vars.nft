@@ -1,5 +1,5 @@
 # 1. 基础接口定义 (单体)
-# 占位符由 Nix 构建时替换（modules/virtualization/alpine-router.nix）
+# 占位符由 image 构建时替换（network.sh 按 network.env）
 # 注：WireGuard 已移除，VPN 入口统一走 Tailscale（含自建 Headscale 控制端）
 define WAN = __WAN_IFACE__
 define LAN = __LAN_IFACE__
@@ -19,10 +19,8 @@ define WAN_IFS_LIST = { $WAN }
 define LAN_IFS_LIST = { $LAN }
 define VPN_IFS_LIST = { $TS }
 
-# 4. 定义代理相关参数
-
-# 5. 定义路由表 ID
+# 4. 定义路由表 ID
 define ROUTE_TABLE_ID = 100
 
-# 6. 定义私有 IP 网段
+# 5. 定义私有 IP 网段
 define PRIVATE_NETS = { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10 }
