@@ -34,6 +34,7 @@ _replace_placeholders() {
         sed -i \
             -e "s|__LAN_IFACE__|${LAN_IFACE}|g" \
             -e "s|__LAN_IP__|${LAN_IP}|g" \
+            -e "s|__LAN_GATEWAY__|${LAN_GATEWAY}|g" \
             -e "s|__DHCP_RANGE_START__|${DHCP_RANGE_START}|g" \
             -e "s|__DHCP_RANGE_END__|${DHCP_RANGE_END}|g" \
             -e "s|__DHCP_LEASE_TIME__|${DHCP_LEASE_TIME}|g" \
@@ -41,6 +42,12 @@ _replace_placeholders() {
             -e "s|__LAN_NETWORK__|${LAN_NETWORK}|g" \
             "${_f_}"
     done
+
+    # keepalived（浮动网关接口名）
+    _KA="/etc/keepalived/keepalived.conf"
+    if [ -f "${_KA}" ]; then
+        sed -i "s|__LAN_IFACE__|${LAN_IFACE}|g" "${_KA}"
+    fi
     # nftables vars
     _NFT="/etc/nftables.d/00-inet-vars.nft"
     if [ -f "${_NFT}" ]; then

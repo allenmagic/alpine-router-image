@@ -23,6 +23,7 @@
 [pm] dnsmasq
 [pm] nftables
 [pm] tailscale
+[pm] keepalived
 [pm] fastfetch
 [dl@https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64] cloudflared
 
