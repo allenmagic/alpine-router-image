@@ -27,8 +27,9 @@ BUILD_BASE="${BUILD_BASE:-${BUILD_ROOT}/${DISTRO}}"
 STAGE3_DIR="${STAGE3_DIR:-${BUILD_BASE}/stage3}"         # stage3 解压目录（构建环境）
 ROOTFS="${ROOTFS:-${BUILD_BASE}/gentoo-rootfs}"         # 最终产物目录（轻量 rootfs）
 CACHE_DIR="${CACHE_DIR:-${BUILD_BASE}/cache}"
-ARCH="x86_64"        # VM 场景固定架构（r3s 的多架构映射已移除）
-GENTOO_ARCH="amd64"  # stage3 路径与镜像目录使用
+ARCH="x86_64"                  # VM 场景固定架构（r3s 的多架构映射已移除）
+GENTOO_ARCH="amd64"            # stage3 路径与镜像目录使用
+HOST_ARCH="$(uname -m)"        # 宿主机架构（传入 setup.sh 的原生构建检测）
 
 MIRROR="${MIRROR:-https://distfiles.gentoo.org/releases/${GENTOO_ARCH}/autobuilds}"
 ROOT_PASSWORD="${ROOT_PASSWORD:-root}"
@@ -79,7 +80,7 @@ esac
 mkdir -p "${BUILD_BASE}" "${CACHE_DIR}" "${WORKDIR}"
 
 # 架构固定 x86_64：宿主与目标同构，无需 binfmt/qemu 预检
-echo "[gentoo] 架构：${ARCH}（宿主 $(uname -m)，同构原生构建）"
+echo "[gentoo] 架构：${ARCH}（宿主 ${HOST_ARCH}，同构原生构建）"
 
 # ---------- 第一步：下载 stage3-<arch>-openrc ----------
 # GENTOO_ARCH 已在参数区定义（固定 amd64）
