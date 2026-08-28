@@ -21,7 +21,6 @@
 [pm] app-editors/nano
 [pm] sys-apps/kmod
 [pm] sys-apps/iproute2
-[pm] net-misc/rsync
 [pm] sys-apps/util-linux
 [pm] sys-libs/timezone-data
 [pm] sys-apps/openrc
