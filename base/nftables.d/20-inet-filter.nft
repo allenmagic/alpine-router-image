@@ -131,7 +131,7 @@ table inet filter {
         iifname @vpn_interfaces accept;
         iifname @lan_interfaces accept;
 
-        log prefix "INPUT_DROP: " limit rate 10/minute drop;
+        limit rate 10/minute log prefix "INPUT_DROP: " drop;
     }
 
     # ============================================================
@@ -167,7 +167,7 @@ table inet filter {
         iifname @vpn_interfaces oifname @lan_interfaces accept;
         iifname @lan_interfaces oifname @vpn_interfaces accept;
 
-        log prefix "FORWARD_DROP: " limit rate 10/minute drop;
+        limit rate 10/minute log prefix "FORWARD_DROP: " drop;
     }
 
     # ============================================================
@@ -175,6 +175,6 @@ table inet filter {
     # ============================================================
     chain output {
         type filter hook output priority filter; policy accept;
-        log prefix "OUTPUT_NEW: " ct state new limit rate 5/minute accept;
+        ct state new limit rate 5/minute log prefix "OUTPUT_NEW: " accept;
     }
 }
