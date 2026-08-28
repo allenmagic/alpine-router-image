@@ -489,8 +489,8 @@ fi
 cat > "${TARGET_ROOTFS}/etc/inittab" <<EOF
 id:3:initdefault:
 si::sysinit:/sbin/openrc sysinit
-si::sysinit:/sbin/openrc boot
-si::wait:/sbin/openrc default
+rc::bootwait:/sbin/openrc boot
+d3::wait:/sbin/openrc default
 l0:0:wait:/sbin/openrc shutdown
 l6:6:wait:/sbin/openrc reboot
 S2::respawn:/sbin/agetty ${SERIAL_BAUD} ${SERIAL_DEV} vt100

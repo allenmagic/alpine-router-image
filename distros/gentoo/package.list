@@ -14,6 +14,7 @@
 # ========== base ==========
 [pm] sys-apps/busybox
 [pm] sys-apps/baselayout
+[pm] acct-group/uucp
 [pm] app-shells/bash
 [pm] net-misc/openssh
 [pm] net-misc/chrony
