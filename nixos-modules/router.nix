@@ -10,7 +10,7 @@
 #
 # 供应链：
 #   - 镜像资产由本仓库 CI 生产（release asset）：vmlinuz-virt / initrd（注入
-#     ext4 依赖链）/ alpine-router-rootfs.qcow2，本模块只 fetchurl 拉取
+#     ext4 依赖链）/ <distro>-rootfs.qcow2，本模块只 fetchurl 拉取
 #   - disk-prep 服务把 release 镜像复制到 /var/lib/alpine-router（可写状态目录；
 #     store 只读无法直接读写打开）——release 升级（store 路径变化）自动重装状态
 #   - 配置：alpine-router-deploy（NAS 侧）是唯一密钥注入通道，配置已烙进镜像
@@ -71,7 +71,8 @@ in
       default = "alpine";
       description = ''
         rootfs 发行版（选择对应的 rootfs asset；vmlinuz-virt/initrd 为
-        发行版无关的共享资产）。gentoo 构建链移植完成前选择它会构建失败。
+        发行版无关的共享资产）。gentoo 为 musl-openrc 变体（首次构建
+        未出 release 前选择它会在 fetchurl 处失败并显示真实 sha256）。
       '';
     };
 
