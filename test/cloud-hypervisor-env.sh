@@ -58,7 +58,7 @@ while [ $# -gt 0 ]; do
 done
 
 [ "$(id -u)" -eq 0 ] || die "需要 root（要操作网卡/桥/tap，用 sudo 跑）"
-command -v cloud-hypervisor >/dev/null 2>&1 || die "未找到 cloud-hypervisor（Arch: sudo pacman -S cloud-hypervisor）"
+command -v cloud-hypervisor >/dev/null 2>&1 || die "未找到 cloud-hypervisor（Arch AUR: paru -S cloud-hypervisor-bin）"
 [ -n "$UPLINK" ] || die "必须用 --uplink 指定上游网卡（例如 eth0 / enp3s0）"
 ip link show "$UPLINK" >/dev/null 2>&1 || die "网卡不存在: $UPLINK"
 case "$DISTRO" in alpine|gentoo) ;; *) die "distro 只支持 alpine|gentoo" ;; esac

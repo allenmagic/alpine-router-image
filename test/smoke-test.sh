@@ -183,7 +183,7 @@ boot_qemu() {
 boot_ch() {
     local distro="$1"
     command -v cloud-hypervisor >/dev/null 2>&1 || \
-        die "未找到 cloud-hypervisor（Arch: sudo pacman -S cloud-hypervisor）"
+        die "未找到 cloud-hypervisor（Arch AUR: paru -S cloud-hypervisor-bin）"
     # CH 无 qemu 的 -snapshot 等价物，先复制到临时文件再启动，避免污染缓存镜像
     # （与生产 disk-prep 先复制到状态盘同一思路）
     local img="${ASSETS_DIR}/${distro}-rootfs.qcow2"
