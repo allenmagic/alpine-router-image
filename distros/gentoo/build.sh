@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # distros/gentoo/build.sh —— 构建 Gentoo aarch64 rootfs
-# 从 Gentoo distfiles 下载 stage3-arm64-musl tarball 作为构建环境，
+# 从 Gentoo distfiles 下载 stage3-arm64-musl-openrc tarball 作为构建环境，
 # 在其中用 ROOT= emerge 安装包到干净的目标 rootfs
 # 产物落在仓库内 build/gentoo/（被 .gitignore 排除）
 #
@@ -106,10 +106,10 @@ echo "[gentoo] 跨架构预检通过（宿主 ${HOST_ARCH}）"
 
 # ---------- 第一步：下载 stage3-<arch>-openrc ----------
 # GENTOO_ARCH 已在参数区定义（aarch64→arm64、x86_64→amd64）
-echo "[gentoo] 1. 解析最新 stage3-${GENTOO_ARCH}-musl 版本 ..."
-LATEST_TXT="$(wget -t 2 -T 30 -qO- "${MIRROR}/latest-stage3-${GENTOO_ARCH}-musl.txt" 2>/dev/null || true)"
+echo "[gentoo] 1. 解析最新 stage3-${GENTOO_ARCH}-musl-openrc 版本 ..."
+LATEST_TXT="$(wget -t 2 -T 30 -qO- "${MIRROR}/latest-stage3-${GENTOO_ARCH}-musl-openrc.txt" 2>/dev/null || true)"
 if [ -z "${LATEST_TXT}" ]; then
-    echo "错误：无法下载 ${MIRROR}/latest-stage3-${GENTOO_ARCH}-musl.txt" >&2
+    echo "错误：无法下载 ${MIRROR}/latest-stage3-${GENTOO_ARCH}-musl-openrc.txt" >&2
     echo "请检查网络连接或尝试切换镜像源（REPO=default 使用官方源）" >&2
     exit 1
 fi
