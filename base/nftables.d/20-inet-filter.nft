@@ -127,13 +127,6 @@ table inet filter {
             parameter-problem
         } accept;
 
-        # ------------------  ICMP (LAN)  ---------------------
-            echo-request,
-            destination-unreachable,
-            time-exceeded,
-            parameter-problem
-        } accept;
-
         # ------------------ 流量放行上网 ------------------------
         iifname @vpn_interfaces accept;
         iifname @lan_interfaces accept;
