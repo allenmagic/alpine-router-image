@@ -78,6 +78,11 @@ _NPROC_="$(nproc 2>/dev/null || echo 4)"
 # Portage 配置（动态适配：原生 ARM64 多核编译，QEMU 保守单核）
 mkdir -p /etc/portage
 
+# 禁用 stage3 自带的官方 binhost：源码编译 20 个用户态包在 4 核 runner 上
+# 足够快，而 binpkg 的 GPG 信任链在构建环境里初始化失败（TRUST_UNDEFINED +
+# /etc/portage/gnupg 权限混乱）会导致 acct-* 二进制包安装失败
+rm -rf /etc/portage/binrepos.conf /etc/portage/binrepos.conf.old 2>/dev/null || true
+
 # 检测是否在 QEMU 用户态模拟下运行
 # HOST_ARCH 由 build.sh 传入（宿主的架构），ARCH 为目标架构。
 # 原生构建（宿主架构 == 目标架构）：充分利用全部 CPU 核心（CI runner 亦然）；
@@ -95,12 +100,12 @@ if _native; then
     _MAKEOPTS_="-j${_NPROC_}"
     _EMERGE_JOBS_="${_NPROC_}"
     # 原生构建：启用 sandbox 保证构建正确性
-    _FEATURES_="getbinpkg -binpkg-verify-signature"
+    _FEATURES_="-getbinpkg"
 else
     _MAKEOPTS_="-j1"
     _EMERGE_JOBS_="1"
     # QEMU/WSL2：禁用 sandbox（/dev/pts 无法正常挂载，PTY 会耗尽）
-    _FEATURES_="getbinpkg -sandbox -usersandbox -ipc-sandbox -network-sandbox -pid-sandbox -binpkg-verify-signature"
+    _FEATURES_="-getbinpkg -sandbox -usersandbox -ipc-sandbox -network-sandbox -pid-sandbox"
 fi
 
 cat > /etc/portage/make.conf <<EOF
