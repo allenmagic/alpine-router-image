@@ -8,8 +8,8 @@ set -eu
 ROOT_PASSWORD="${ROOT_PASSWORD:-root}"
 HOSTNAME_VAL="${HOSTNAME_VAL:-nanopi-r3s-gentoo}"
 TARGET_ROOTFS="${TARGET_ROOTFS:-/gentoo-rootfs}"
-SERIAL_DEV="${SERIAL_DEV:-ttyS2}"
-SERIAL_BAUD="${SERIAL_BAUD:-1500000}"
+SERIAL_DEV="${SERIAL_DEV:-ttyS0}"   # VM 串口（R3S 是 ttyS2）
+SERIAL_BAUD="${SERIAL_BAUD:-115200}"
 GENTOO_MIRROR_BASE="${GENTOO_MIRROR_BASE:-https://distfiles.gentoo.org}"
 TIMEZONE="${TIMEZONE:-Asia/Shanghai}"
 
