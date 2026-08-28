@@ -178,10 +178,7 @@ chroot_enter "${STAGE3_DIR}"
 echo "[gentoo] 3+. 拷贝安装框架到 stage3 ..."
 cp -f "${REPO_ROOT}/lib/download-helpers.sh" "${STAGE3_DIR}/download-helpers.sh"
 cp -r "${REPO_ROOT}/base" "${STAGE3_DIR}/base"
-cp -r "${REPO_ROOT}/sing-box" "${STAGE3_DIR}/sing-box"
 cp -r "${REPO_ROOT}/scripts" "${STAGE3_DIR}/scripts"
-"${REPO_ROOT}/tools/inject-secrets.sh" write "${STAGE3_DIR}" 2>/dev/null || true
-cp -f "${REPO_ROOT}/tools/inject-secrets.sh" "${STAGE3_DIR}/inject-secrets.sh" 2>/dev/null || true
 cp -f "${SCRIPT_DIR}/package.list" "${STAGE3_DIR}/package.list"
 	cp -f "${SCRIPT_DIR}/service.sh" "${STAGE3_DIR}/service.sh"
 	cp -f "${SCRIPT_DIR}/network.sh" "${STAGE3_DIR}/network.sh"
@@ -215,7 +212,6 @@ rm -rf "${ROOTFS}"
 mv "${STAGE3_DIR}/gentoo-rootfs" "${ROOTFS}"
 
 rm -f "${STAGE3_DIR}/setup.sh"
-rm -f "${STAGE3_DIR}/inject-secrets.sh"
 rm -f "${STAGE3_DIR}/download-helpers.sh"
 rm -f "${STAGE3_DIR}/package.list"
 rm -f "${STAGE3_DIR}/service.sh"
@@ -223,7 +219,6 @@ rm -f "${STAGE3_DIR}/network.sh"
 rm -f "${STAGE3_DIR}/check.sh"
 rm -f "${STAGE3_DIR}/network.env"
 
-rm -rf "${STAGE3_DIR}/base" "${STAGE3_DIR}/sing-box" "${STAGE3_DIR}/scripts"
 
 echo "[gentoo] base rootfs 构建完成：${ROOTFS}"
 
