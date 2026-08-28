@@ -22,7 +22,6 @@
 | 接口 | `LAN` | `eth1` |
 | 接口 | `WG` | `wg0` |
 | 接口 | `TS` | `ts0` |
-| 接口 | `TUN` | `tun0` |
 | 端口 | `WG_PORT` | `51820` |
 | 端口 | `TS_PORT` | `41641` |
 | 端口 | `SSH_PORT` | `22` |
@@ -36,7 +35,6 @@
 | 集合 | `WAN_IFS_LIST` | `{ eth0 }` |
 | 集合 | `LAN_IFS_LIST` | `{ eth1 }` |
 | 集合 | `VPN_IFS_LIST` | `{ wg0, ts0 }` |
-| 集合 | `TUN_IFS_LIST` | `{ tun0 }` |
 | 路由表 | `ROUTE_TABLE_ID` | `100` |
 | 私网 | `PRIVATE_NETS` | `10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10` |
 
@@ -54,7 +52,6 @@
 - `lan_interfaces`
 - `wan_interfaces`
 - `vpn_interfaces`
-- `tun_interfaces` 
 
 ### `prerouting`
 
@@ -73,7 +70,6 @@
 
 1. `oifname @wan_interfaces` 且 `meta nfproto ipv4` 时执行 `masquerade`
    - 含义：所有经 WAN 出口的 IPv4 流量都做源地址伪装
-   - 作用：LAN/TUN/VPN 侧主机可以通过路由器共享 IPv4 上网
 
 2. `iifname @vpn_interfaces` 且 `oifname @lan_interfaces` 且 `meta nfproto ipv4` 时执行 `masquerade`
    - 含义：VPN 进入、转发到 LAN 的 IPv4 流量也做源 NAT
@@ -85,7 +81,6 @@
 
 定义 `table inet filter`，包含：
 
-- 接口集合：`lan_interfaces`、`wan_interfaces`、`vpn_interfaces`、`tun_interfaces`
 - 动态黑名单：`flood_blacklist_v4`、`flood_blacklist_v6`
 - `flowtable f`：绑定设备 `{ eth0, eth1 }`，用于 TCP/UDP 转发卸载
 
@@ -146,28 +141,23 @@
 | 来源 | 协议/端口 | 条件 |
 | --- | --- | --- |
 | `LAN` | `tcp/22` | 新建连接，`30/minute`，`burst 20` |
-| `TUN` | `tcp/22` | 新建连接，`30/minute`，`burst 20` |
 | `VPN` | `tcp/22` | 新建连接，`60/minute`，`burst 30` |
 | `TS_NET` | `tcp/22` | 新建连接，`60/minute`，`burst 30` |
 | `LAN` | `udp/67-68` | DHCP |
 | `LAN` | `udp/53` | DNS |
 | `LAN` | `tcp/53` | DNS |
-| `TUN` | `udp/53` | DNS |
-| `TUN` | `tcp/53` | DNS |
 
 ### 其他本机访问放行
 
 - 允许来自 `LAN` 的常见 IPv4 ICMP
-- 允许来自 `TUN` 的常见 IPv4 ICMP
 - 直接放行来自以下入口接口的其他流量到本机：
   - `vpn_interfaces`
-  - `tun_interfaces`
   - `lan_interfaces`
 
 结论：
 
 - WAN 对本机默认只开放 WireGuard、Tailscale 握手和受限 ICMP/ICMPv6。
-- LAN / TUN / VPN 到本机相对宽松，除前面单独列出的 SSH、DNS、DHCP 外，后续还有整体 `accept`。
+- LAN / VPN 到本机相对宽松，除前面单独列出的 SSH、DNS、DHCP 外，后续还有整体 `accept`。
 
 ### INPUT 默认处理
 
@@ -196,10 +186,6 @@
 
 | 入接口/源 | 出接口 | 含义 |
 | --- | --- | --- |
-| `LAN` | `TUN` | 内网流量进入透明代理隧道 |
-| `TUN` | `WAN` | 代理后的流量继续出网 |
-| `TUN` | `LAN` | 允许隧道侧回到内网 |
-| `TS_NET` | `TUN` | Tailscale 来源流量转入透明代理隧道 |
 | `LAN` | `LAN` | 同接口 LAN 内部转发 |
 | `VPN` | `LAN` | VPN 访问内网 |
 | `LAN` | `VPN` | 内网访问 VPN 侧 |
@@ -209,8 +195,6 @@
 - 没有显式的 `LAN -> WAN` 放行规则。
 - 没有显式的 `VPN -> WAN` 放行规则。
 - 当前设计更像是：
-  - LAN 流量优先导入 `TUN`
-  - 由 `TUN` 继续出 WAN
   - VPN 主要用于访问内网，而不是直接借道 WAN
 
 这意味着是否能正常上网，还依赖更上层的策略路由、透明代理和接口流向设计。
@@ -246,7 +230,6 @@
 2. 内网、VPN、透明代理接口对路由器本机访问较宽松。
 3. 出 WAN 的 IPv4 流量统一做 `masquerade`。
 4. VPN 访问 LAN 时额外做一次 IPv4 `masquerade`，简化回程路径。
-5. 转发链偏向“LAN -> TUN -> WAN”的代理出口模型，而不是传统“LAN -> WAN”直连模型。
 6. 具备基础 SYN Flood 限流、动态黑名单、日志记录和流量卸载能力。
 
 ## 8. 需要注意的点
@@ -254,7 +237,6 @@
 从当前规则看，有几个实现上的注意事项：
 
 1. `prerouting` 为空，说明当前没有端口转发。
-2. `flowtable f` 仅绑定 `{ eth0, eth1 }`，不包含 `wg0`、`ts0`、`tun0`。
+2. `flowtable f` 仅绑定 `{ eth0, eth1 }`，不包含 VPN 隧道接口。
 3. `VPN_IFS_LIST` 包含 `wg0` 和 `ts0`，同时又单独通过 `TS_NET` 允许部分访问，存在“按接口”和“按地址段”混用的设计。
-4. `input` 链末尾存在 `iifname @vpn_interfaces accept`、`iifname @tun_interfaces accept`、`iifname @lan_interfaces accept`，因此这些入口到本机的大部分流量都会被放行。
 5. 若未来要支持普通 LAN 直连上网，需要确认是否应补充 `LAN -> WAN` 转发规则，或由其他策略路由规则接管。

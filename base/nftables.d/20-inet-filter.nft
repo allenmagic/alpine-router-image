@@ -1,6 +1,6 @@
 table inet filter {
     # ===============================================================================================
-    # 定义集合变量：LAN_IFS_LIST/WAN_IFS_LIST/VPN_IFS_LIST/TUN_IFS_LIST变量在00-inet-vars.nft中定义
+    # 定义集合变量：LAN_IFS_LIST/WAN_IFS_LIST/VPN_IFS_LIST变量在00-inet-vars.nft中定义
     # ===============================================================================================
     set lan_interfaces {
         type ifname;
@@ -17,10 +17,6 @@ table inet filter {
          elements = $VPN_IFS_LIST;
     }
 
-    set tun_interfaces {
-        type ifname;
-        elements = $TUN_IFS_LIST;
-    }
 
     # ========= 动态黑名单 (分离 IPv4/IPv6) =========
     set flood_blacklist_v4 {
@@ -112,9 +108,8 @@ table inet filter {
             nd-neighbor-advert
         } accept;
 
-        # ---------------- SSH 管理 ( LAN / VPN / TUN / Tailscale ) --------------
+        # ---------------- SSH 管理 ( LAN / VPN / Tailscale ) --------------
         iifname @lan_interfaces tcp dport $SSH_PORT ct state new limit rate 30/minute burst 20 packets accept;
-        iifname @tun_interfaces tcp dport $SSH_PORT ct state new limit rate 30/minute burst 20 packets accept;
         iifname @vpn_interfaces tcp dport $SSH_PORT ct state new limit rate 60/minute burst 30 packets accept;
 
         # ----------------  DHCP  -----------------------------
@@ -122,9 +117,7 @@ table inet filter {
 
         # -------------------  DNS  ---------------------------
         iifname @lan_interfaces udp dport $DNS_PORT accept;
-        iifname @tun_interfaces udp dport $DNS_PORT accept;
         iifname @lan_interfaces tcp dport $DNS_PORT accept;
-        iifname @tun_interfaces tcp dport $DNS_PORT accept;
 
         # ------------------  ICMP (LAN)  ---------------------
         iifname @lan_interfaces icmp type {
@@ -135,7 +128,6 @@ table inet filter {
         } accept;
 
         # ------------------  ICMP (LAN)  ---------------------
-        iifname @tun_interfaces icmp type {
             echo-request,
             destination-unreachable,
             time-exceeded,
@@ -144,7 +136,6 @@ table inet filter {
 
         # ------------------ 流量放行上网 ------------------------
         iifname @vpn_interfaces accept;
-        iifname @tun_interfaces accept;
         iifname @lan_interfaces accept;
 
         log prefix "INPUT_DROP: " limit rate 10/minute drop;
@@ -166,17 +157,9 @@ table inet filter {
         # -------------------- MSS Clamping ---------------------
         tcp flags syn tcp option maxseg size set rt mtu;
 
-        # --------------------- LAN -> TUN 转发 -----------------
-        iifname @lan_interfaces oifname @tun_interfaces accept;
 
-        # --------------------- TUN -> WAN 转发 -----------------
-        iifname @tun_interfaces oifname @wan_interfaces accept;
 
-        # --------------------- TUN -> LAN 转发 -----------------
-        iifname @tun_interfaces oifname @lan_interfaces accept;
 
-        # --------------------- Tailscale -> TUN 转发 ------------
-        ip saddr $TS_NET oifname @tun_interfaces accept;
 
         # --------------------- LAN -> LAN 转发 -----------------
         iifname @lan_interfaces oifname @lan_interfaces accept;

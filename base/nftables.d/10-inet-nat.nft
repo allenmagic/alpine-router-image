@@ -17,11 +17,6 @@ table inet nat {
         elements = $VPN_IFS_LIST;
     }
 
-    set tun_interfaces {
-        type ifname;
-        elements = $TUN_IFS_LIST;
-    }
-
     # ============================================================
     # PREROUTING 链 (DNAT - 端口转发)
     # ============================================================

@@ -4,7 +4,6 @@
 define WAN = __WAN_IFACE__
 define LAN = __LAN_IFACE__
 define TS = { ts0, tailscale0 }
-define TUN = tun0
 
 # 2. 端口与网段定义
 define TS_PORT = { 41641, 41642 }
@@ -19,7 +18,6 @@ define VPN_NETS = { $TS_NET }
 define WAN_IFS_LIST = { $WAN }
 define LAN_IFS_LIST = { $LAN }
 define VPN_IFS_LIST = { $TS }
-define TUN_IFS_LIST = { $TUN }
 
 # 4. 定义代理相关参数
 
