@@ -18,6 +18,7 @@
 #   --assets-dir DIR  镜像资产目录（默认 <仓库>/build/smoke-assets）
 #   --wan-bridge NAME WAN 桥名（默认 br-wan）
 #   --lan-bridge NAME LAN 桥名（默认 br-lan）
+#   --loglevel N      追加内核参数 loglevel=N（0-7；3 可屏蔽 nft warn 级日志刷屏）
 #   -h|--help         本帮助
 #
 # 前置: 先下载并校验镜像资产（cloud-hypervisor 装好即可，不需要 qemu）
@@ -40,6 +41,7 @@ TAP_WAN="router-wan"
 TAP_LAN="router-lan"
 MAC_WAN="02:00:00:01:00:01"
 MAC_LAN="02:00:00:01:00:02"
+LOGLEVEL=""      # 空 = 不追加 loglevel；如 --loglevel 3
 
 usage() { sed -n '2,/^# =====/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 log() { printf '[ch-env] %s\n' "$*" >&2; }
@@ -53,6 +55,7 @@ while [ $# -gt 0 ]; do
         --assets-dir)   ASSETS_DIR="${2:?--assets-dir 需要值}"; shift 2 ;;
         --wan-bridge)   WAN_BRIDGE="${2:?--wan-bridge 需要值}"; shift 2 ;;
         --lan-bridge)   LAN_BRIDGE="${2:?--lan-bridge 需要值}"; shift 2 ;;
+        --loglevel)     LOGLEVEL="${2:?--loglevel 需要值(0-7)}"; shift 2 ;;
         *) die "未知参数: $1（见 --help）" ;;
     esac
 done
@@ -61,6 +64,10 @@ done
 # AUR 的 cloud-hypervisor-bin 只装 cloud-hypervisor-static（无 cloud-hypervisor 主名）
 CH_BIN="$(command -v cloud-hypervisor 2>/dev/null || command -v cloud-hypervisor-static 2>/dev/null)"
 [ -n "$CH_BIN" ] || die "未找到 cloud-hypervisor（Arch AUR: paru -S cloud-hypervisor-bin）"
+
+# 内核 cmdline：--loglevel 可选追加，压掉 nft warn 级日志对串口的干扰
+KCMD="console=ttyS0 root=/dev/vda rootfstype=ext4 rw"
+[ -n "$LOGLEVEL" ] && KCMD="${KCMD} loglevel=${LOGLEVEL}"
 [ -n "$UPLINK" ] || die "必须用 --uplink 指定上游网卡（例如 eth0 / enp3s0）"
 ip link show "$UPLINK" >/dev/null 2>&1 || die "网卡不存在: $UPLINK"
 case "$DISTRO" in alpine|gentoo) ;; *) die "distro 只支持 alpine|gentoo" ;; esac
@@ -118,7 +125,7 @@ boot_ch() {
     "$CH_BIN" \
         --kernel "$ASSETS_DIR/vmlinuz-virt" \
         --initramfs "$ASSETS_DIR/initrd" \
-        --cmdline "console=ttyS0 root=/dev/vda rootfstype=ext4 rw" \
+        --cmdline "$KCMD" \
         --disk "path=$ASSETS_DIR/${DISTRO}-rootfs.qcow2" \
         --cpus boot=2 \
         --memory size=512M \
