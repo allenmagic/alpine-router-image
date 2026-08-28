@@ -6,7 +6,7 @@
 #   - initramfs-virt 注入 ext4 依赖链（netboot 版不含 ext4，
 #     root= 模式不挂 modloop；modprobe 读 modules.dep.bin 必须 depmod 重建）
 #   - rootfs 注入 modloop 模块（与 vmlinuz-virt 精确配套）+ 引导模块 + ttyS0 getty
-#   - 4G ext4 → qcow2（compact：release 体积 ≈ 实际内容）
+#   - 2G ext4 → qcow2（compact：release 体积 ≈ 实际内容）
 #
 # 用法：
 #   ./image/assemble.sh <rootfs-tarball> [output-dir] [distro]
