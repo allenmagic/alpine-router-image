@@ -19,8 +19,7 @@ on:
         type: choice
         required: true
         default: alpine
-        options: [alpine]
-        # TODO: 构建链移植完成后加入 gentoo
+        options: [alpine, gentoo]
 
 permissions:
   contents: write
@@ -44,21 +43,22 @@ jobs:
             xz-utils file curl ca-certificates wget \
             cpio gzip squashfs-tools kmod e2fsprogs qemu-utils fakeroot nftables
 
-      - name: Build rootfs (alpine / base / x86_64)
+      - name: Build rootfs (${{ inputs.distro }} / base / x86_64)
         run: |
           set -euo pipefail
-          chmod +x distros/alpine/build.sh
-          sudo -E bash -x distros/alpine/build.sh
+          chmod +x "distros/${{ inputs.distro }}/build.sh"
+          sudo -E bash -x "distros/${{ inputs.distro }}/build.sh"
 
       - name: Locate rootfs artifact
         id: artifact
         run: |
-          f="$(ls -1 build/alpine/alpine-rootfs-minimal.tar.xz 2>/dev/null \
-               || ls -1 build/alpine/*-rootfs-minimal.tar.* 2>/dev/null \
-               || ls -1 build/alpine/*.tar.* 2>/dev/null | head -n1)"
+          D="${{ inputs.distro }}"
+          f="$(ls -1 build/$D/$D-rootfs-minimal.tar.xz 2>/dev/null \
+               || ls -1 build/$D/*-rootfs-minimal.tar.* 2>/dev/null \
+               || ls -1 build/$D/*.tar.* 2>/dev/null | head -n1)"
           if [ -z "${f:-}" ] || [ ! -e "$f" ]; then
-            echo "未找到 rootfs 产物" >&2
-            ls -lR build/alpine || true
+            echo "未找到 $D 产物" >&2
+            ls -lR build/$D || true
             exit 1
           fi
           echo "path=$f" >> "$GITHUB_OUTPUT"
