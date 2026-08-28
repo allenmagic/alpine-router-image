@@ -175,6 +175,9 @@ table inet filter {
     # ============================================================
     chain output {
         type filter hook output priority filter; policy accept;
+        # 本机周期性链路组播（keepalived VRRP 224.0.0.18、mDNS 等）不记日志，避免刷屏
+        ip daddr 224.0.0.0/24 accept;
+        ip6 daddr ff02::/16 accept;
         ct state new limit rate 5/minute log prefix "OUTPUT_NEW: " accept;
     }
 }
