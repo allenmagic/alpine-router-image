@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-# 从 dist/SHA256SUMS 同步 nixos-modules/router.nix 的 release tag 与三处 sha256
+# 从 dist/SHA256SUMS 同步 nixos-modules/router.nix 的 release tag 与各资产 sha256
 # 用法：python3 image/sync-flake-sha.py <SHA256SUMS> <router.nix> <release-tag>
-# 幂等：值相同则文件不变（git diff 为空，调用方跳过提交）
+#
+# SHA256SUMS 驱动：遍历全部条目，对 router.nix 中 url 以该资产名结尾的
+# sha256 行做锚定替换——新增发行版时只需 SHA256SUMS 多一个条目（模块内
+# 已有对应 osAssets 行则自动同步；否则警告提示补行）。
+# 幂等：值相同则文件不变（git diff 为空，调用方跳过提交）。
 import re
 import sys
 
@@ -20,18 +24,21 @@ s, n_tag = re.subn(r'imageRelease = "[^"]*";', f'imageRelease = "{tag}";', s, co
 if n_tag == 0:
     sys.exit("imageRelease 行未找到")
 
-# 更新三处 sha256（锚定对应 url 行之后的 sha256 行）
-for asset in ("vmlinuz-virt", "initrd", "alpine-router-rootfs.qcow2"):
-    sha = shas.get(asset)
-    if not sha:
-        sys.exit(f"SHA256SUMS 缺少 {asset}")
+updated = 0
+for asset, sha in sorted(shas.items()):
+    # 锚定 url 以该资产名结尾的 sha256 行
     pattern = re.compile(
-        r'(url = "\$\{releaseBase\}/' + asset + r'";\n\s*sha256 = ")[0-9a-f]{64}(")'
+        r'(url = "[^"]*/' + re.escape(asset) + r'";\n(?:\s*#[^\n]*\n)*\s*sha256 = ")[0-9a-f]{64}(")'
     )
     s, n = pattern.subn(r"\g<1>" + sha + r"\g<2>", s, count=1)
     if n == 0:
-        sys.exit(f"{asset} 的 sha256 行未找到")
+        print(f"⚠️ SHA256SUMS 有 {asset}，但 router.nix 无对应资产行（新发行版需在 osAssets 补行）")
+    else:
+        updated += 1
+        print(f"已同步 {asset}: {sha[:12]}...")
+
+if updated == 0:
+    sys.exit("没有任何资产条目被同步，检查 SHA256SUMS 与 router.nix 的对应关系")
 
 open(nix_file, "w").write(s)
-print(f"已同步 {tag}: vmlinuz={shas['vmlinuz-virt'][:12]}... "
-      f"initrd={shas['initrd'][:12]}... qcow2={shas['alpine-router-rootfs.qcow2'][:12]}...")
+print(f"完成：tag={tag}，同步 {updated} 个资产")

@@ -13,6 +13,14 @@ name: Build Alpine Router VM Image
 
 on:
   workflow_dispatch:
+    inputs:
+      distro:
+        description: "rootfs 发行版（三件套与 initrd 为发行版无关的共享资产）"
+        type: choice
+        required: true
+        default: alpine
+        options: [alpine]
+        # TODO: 构建链移植完成后加入 gentoo
 
 permissions:
   contents: write
@@ -59,7 +67,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x image/assemble.sh image/assemble-rootfs.sh
-          bash image/assemble.sh "${{ steps.artifact.outputs.path }}" dist
+          bash image/assemble.sh "${{ steps.artifact.outputs.path }}" dist "${{ inputs.distro }}"
 
       - name: Resolve tag
         id: tag
@@ -73,7 +81,7 @@ jobs:
           files: |
             dist/vmlinuz-virt
             dist/initrd
-            dist/alpine-router-rootfs.qcow2
+            dist/${{ inputs.distro }}-rootfs.qcow2
             dist/SHA256SUMS
           draft: false
           prerelease: false

@@ -6,11 +6,11 @@
 #   - initramfs-virt 注入 ext4 依赖链（netboot 版不含 ext4，
 #     root= 模式不挂 modloop；modprobe 读 modules.dep.bin 必须 depmod 重建）
 #   - rootfs 注入 modloop 模块（与 vmlinuz-virt 精确配套）+ 引导模块 + ttyS0 getty
-#   - 8G ext4 → qcow2（compact：release 体积 ≈ 实际内容，宿主侧 autoCreate 复制快）
+#   - 4G ext4 → qcow2（compact：release 体积 ≈ 实际内容）
 #
 # 用法：
-#   ./image/assemble.sh <rootfs-tarball> [output-dir]
-#   产物：vmlinuz-virt / initrd / alpine-router-rootfs.qcow2 / SHA256SUMS
+#   ./image/assemble.sh <rootfs-tarball> [output-dir] [distro]
+#   产物：vmlinuz-virt / initrd / <distro>-rootfs.qcow2 / SHA256SUMS
 #
 # 依赖：wget cpio gzip squashfs-tools kmod e2fsprogs qemu-utils
 #       CI runner 是 root 直接跑；本地非 root 自动用 fakeroot 包裹装配阶段
@@ -26,8 +26,9 @@ INITRAMFS_SHA256="6d80a739fedeeb6cd63e24dd208845e22199c41a5fb2054941ef61ec30264f
 MODLOOP_SHA256="78907e7cc812d555f08d4e1133d090cf11fa197370882adfe67b0a5986ccb3f9"
 
 # 转绝对路径：assemble-rootfs.sh 会 cd 到 mktemp 目录，相对路径会失效
-ROOTFS_TARBALL="$(readlink -f "${1:?用法: assemble.sh <rootfs-tarball> [output-dir]}")"
+ROOTFS_TARBALL="$(readlink -f "${1:?用法: assemble.sh <rootfs-tarball> [output-dir] [distro]}")"
 OUT_DIR="$(readlink -f "${2:-dist}")"
+DISTRO="${3:-alpine}"   # rootfs 发行版（决定 rootfs asset 命名；三件套共享）
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p "$OUT_DIR"
@@ -101,10 +102,10 @@ fi
 
 # ---------- 4. qcow2 转换（compact：稀疏 ext4 → 实际内容大小的 qcow2） ----------
 echo "[assemble] 转换为 qcow2 ..."
-qemu-img convert -f raw -O qcow2 "$WORK/rootfs.ext4" "$WORK/alpine-router-rootfs.qcow2"
+qemu-img convert -f raw -O qcow2 "$WORK/rootfs.ext4" "$WORK/${DISTRO}-rootfs.qcow2"
 
 # ---------- 5. 输出 ----------
-cp "$WORK/vmlinuz-virt" "$WORK/initrd" "$WORK/alpine-router-rootfs.qcow2" "$OUT_DIR/"
-(cd "$OUT_DIR" && sha256sum vmlinuz-virt initrd alpine-router-rootfs.qcow2 > SHA256SUMS)
+cp "$WORK/vmlinuz-virt" "$WORK/initrd" "$WORK/${DISTRO}-rootfs.qcow2" "$OUT_DIR/"
+(cd "$OUT_DIR" && sha256sum vmlinuz-virt initrd "${DISTRO}-rootfs.qcow2" > SHA256SUMS)
 echo "[assemble] 完成："
 ls -la "$OUT_DIR/"

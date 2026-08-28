@@ -25,10 +25,26 @@
 let
   cfg = config.microvm.router;
 
-  # 本仓库 CI release（升级时同步改 tag 与三处 sha256，
-  # 真实值取 release 的 SHA256SUMS asset）
+  # 本仓库 CI release（升级时同步改 tag 与 sha256，由 CI 的
+  # sync-flake-sha.py 按 release 的 SHA256SUMS 条目自动更新）
   imageRelease = "alpine-router-image-20260828";
   releaseBase = "https://github.com/allenmagic/alpine-router-image/releases/download/${imageRelease}";
+
+  # rootfs 资产表（按发行版；vmlinuz-virt/initrd 是发行版无关的共享资产）。
+  # CI 出 release 时 sync 脚本按 SHA256SUMS 条目自动同步对应 sha256；
+  # 新发行版构建链就绪后在此加一行即可（SHA256SUMS 会多出对应条目）。
+  osAssets = {
+    alpine = {
+      url = "${releaseBase}/alpine-rootfs.qcow2";
+      sha256 = "2fff82eba0d034abb845f971230c972c8d61fe05862314b32b48f16cb872b451";
+    };
+    gentoo = {
+      url = "${releaseBase}/gentoo-rootfs.qcow2";
+      # 全零占位：构建链未就绪（选择 gentoo 会构建失败并显示真实值）；
+      # CI 出 gentoo 条目后 sync 脚本会自动替换
+      sha256 = "0000000000000000000000000000000000000000000000000000000000000000";
+    };
+  };
 
   # 客户机内核包装：CH runner（x86_64 分支）取 ${kernel.dev}/vmlinux——
   # 内容实为 bzImage（官方 vmlinuz-virt），CH 按文件头自动识别加载
@@ -49,6 +65,15 @@ in
 {
   options.microvm.router = {
     enable = lib.mkEnableOption "Alpine Router MicroVM（POC，与 libvirt 方案二选一）";
+
+    os = lib.mkOption {
+      type = lib.types.enum [ "alpine" "gentoo" ];
+      default = "alpine";
+      description = ''
+        rootfs 发行版（选择对应的 rootfs asset；vmlinuz-virt/initrd 为
+        发行版无关的共享资产）。gentoo 构建链移植完成前选择它会构建失败。
+      '';
+    };
 
     kernelFile = lib.mkOption {
       type = lib.types.path;
@@ -76,11 +101,12 @@ in
     rootfsImage = lib.mkOption {
       type = lib.types.path;
       default = pkgs.fetchurl {
-        url = "${releaseBase}/alpine-router-rootfs.qcow2";
-        sha256 = "2fff82eba0d034abb845f971230c972c8d61fe05862314b32b48f16cb872b451";
+        url = osAssets.${cfg.os}.url;
+        sha256 = osAssets.${cfg.os}.sha256;
       };
       description = ''
-        VM 根磁盘 qcow2（rootfs + modloop 模块，本仓库 release asset）。
+        VM 根磁盘 qcow2（rootfs + modloop 模块，本仓库 release asset；
+        按 `os` 参数选择发行版）。
       '';
     };
 
