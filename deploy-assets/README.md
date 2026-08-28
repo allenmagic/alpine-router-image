@@ -3,7 +3,7 @@
 本目录是 Alpine 路由 VM 的**密钥注入器**（deploy 资产）。
 
 **职责边界**：VM 的全部配置（nftables/dnsmasq/sysctl/服务脚本/网络参数）已由
-[alpine-router-image](https://github.com/allenmagic/alpine-router-image) 仓库的 CI
+[microvm-router-image](https://github.com/allenmagic/microvm-router-image) 仓库的 CI
 烙进镜像（出厂即正确），本目录只承载密钥类数据，deploy 时注入。
 
 ## 目录结构
@@ -41,7 +41,7 @@ install.sh 结束（含失败）时删除 env 文件。不提供密钥则跳过�
 
 ## 更新配置
 
-**改配置**：改 [alpine-router-image](https://github.com/allenmagic/alpine-router-image)
+**改配置**：改 [microvm-router-image](https://github.com/allenmagic/microvm-router-image)
 的 `base/` 或 `network.env` → 触发其 CI → CI 自动把 release 的 tag + sha256 同步进
 `nixos-modules/router.nix`（`sync-flake-sha.py`，无需手工）→ NAS 侧
 `nix flake update` → `nixos-rebuild switch` → 重启 VM（disk-prep 自动重装状态盘）→

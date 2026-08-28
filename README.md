@@ -1,4 +1,4 @@
-# alpine-router-image
+# microvm-router-image
 
 Alpine 路由 VM 的**唯一仓库**：镜像生产（CI）+ 消费端声明（flake 模块）。
 rootfs 构建链移植自
@@ -20,10 +20,10 @@ rootfs 构建链移植自
 
 ```nix
 # 宿主 flake
-inputs.alpine-router-image.url = "github:allenmagic/alpine-router-image";
+inputs.microvm-router-image.url = "github:allenmagic/microvm-router-image";
 
 # 宿主模块
-imports = [ inputs.alpine-router-image.nixosModules.router ];
+imports = [ inputs.microvm-router-image.nixosModules.router ];
 microvm.router = {
   enable = true;
 

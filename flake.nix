@@ -1,4 +1,4 @@
-# alpine-router-image flake
+# microvm-router-image flake
 #
 # 提供 nixosModules.router：Alpine Router MicroVM 的消费端声明模块
 # （镜像 fetchurl + cloud-hypervisor 声明 + disk-prep + tap 挂桥）。
@@ -11,7 +11,7 @@
 
   outputs = { self, nixpkgs }: {
     # 消费端模块：qnap-nixos-nas 等宿主引用
-    #   imports = [ inputs.alpine-router-image.nixosModules.router ];
+    #   imports = [ inputs.microvm-router-image.nixosModules.router ];
     #   microvm.router.enable = true;
     nixosModules.router = import ./nixos-modules/router.nix;
   };
