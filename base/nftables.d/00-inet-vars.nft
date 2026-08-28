@@ -11,7 +11,6 @@ define TS_PORT = { 41641, 41642 }
 define SSH_PORT = 22
 define DNS_PORT = 53
 define ROUTER_LAN_IP = __ROUTER_LAN_IP__
-define PROXY_SERVER_IP = 192.168.10.180
 define LAN_NET = __LAN_NET__
 define TS_NET = 100.64.0.0/10
 define VPN_NETS = { $TS_NET }
@@ -23,7 +22,6 @@ define VPN_IFS_LIST = { $TS }
 define TUN_IFS_LIST = { $TUN }
 
 # 4. 定义代理相关参数
-define PROXY_SETS = { $PROXY_SERVER_IP }
 
 # 5. 定义路由表 ID
 define ROUTE_TABLE_ID = 100

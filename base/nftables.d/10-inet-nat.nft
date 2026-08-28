@@ -27,8 +27,6 @@ table inet nat {
     # ============================================================
     chain prerouting {
         type nat hook prerouting priority dstnat; policy accept;
-        ip saddr $PROXY_SERVER_IP return;
-        ip daddr $PROXY_SERVER_IP return;
     }
 
     # ============================================================

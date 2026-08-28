@@ -29,7 +29,6 @@
 | 端口 | `DNS_PORT` | `53` |
 | 地址 | `WG_IP` | `10.10.10.2` |
 | 地址 | `ROUTER_LAN_IP` | `192.168.10.1` |
-| 地址 | `PROXY_SERVER_IP` | `192.168.10.180` |
 | 网段 | `LAN_NET` | `192.168.10.0/24` |
 | 网段 | `TS_NET` | `100.64.0.0/10` |
 | 网段 | `WG_NET` | `10.10.10.0/24` |
@@ -38,14 +37,13 @@
 | 集合 | `LAN_IFS_LIST` | `{ eth1 }` |
 | 集合 | `VPN_IFS_LIST` | `{ wg0, ts0 }` |
 | 集合 | `TUN_IFS_LIST` | `{ tun0 }` |
-| 集合 | `PROXY_SETS` | `{ 192.168.10.180 }` |
 | 路由表 | `ROUTE_TABLE_ID` | `100` |
 | 私网 | `PRIVATE_NETS` | `10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10` |
 
 说明：
 
 - 当前默认接口假设仍然是 `WAN=eth0`、`LAN=eth1`。
-- `PROXY_SETS`、`ROUTE_TABLE_ID`、`PRIVATE_NETS` 在本目录的 NAT/Filter 文件中暂未直接使用。
+- `ROUTE_TABLE_ID`、`PRIVATE_NETS` 在本目录的 NAT/Filter 文件中暂未直接使用。
 
 ## 2. NAT 规则
 
