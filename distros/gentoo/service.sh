@@ -10,7 +10,7 @@ enable_router_services() {
 
     # --- 系统基础服务 ---
     _enable_service bootmisc boot
-    _enable_service syslogd
+    _enable_service syslog
     _enable_service crond
 
     # --- 网络服务（base/init/openrc/network：udhcpc + ip 直接配置）---

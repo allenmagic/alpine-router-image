@@ -299,10 +299,10 @@ start_pre() {
 
 start() {
     ebegin "Starting ntpd"
-    start-stop-daemon --start --quiet \
+    start-stop-daemon --start --quiet --background \
         --make-pidfile \
         --pidfile /run/busybox-ntpd.pid \
-        --exec /bin/busybox -- ntpd -d -p pool.ntp.org -p ntp.cloudflare.com
+        --exec /bin/busybox -- ntpd -n -p pool.ntp.org -p ntp.cloudflare.com
     eend $?
 }
 
@@ -354,9 +354,9 @@ description="Busybox cron daemon"
 
 start() {
     ebegin "Starting crond"
-    start-stop-daemon --start --quiet \
+    start-stop-daemon --start --quiet --background \
         --make-pidfile --pidfile /run/crond.pid \
-        --exec /bin/busybox -- crond -l 0 -L /var/log/crond.log
+        --exec /bin/busybox -- crond -f -l 0 -L /var/log/crond.log
     eend $?
 }
 
