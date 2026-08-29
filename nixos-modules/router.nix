@@ -36,11 +36,11 @@ let
   osAssets = {
     alpine = {
       url = "${releaseBase}/alpine-rootfs.qcow2";
-      sha256 = "021e531a667ec9668ddccd3fa1e4afe9f46fdbc4d058108101a306298eae81fc";
+      sha256 = "079e7ef83a76d09545d184826ab34bec48e665d26198231a619f86ae52c3ca8e";
     };
     gentoo = {
       url = "${releaseBase}/gentoo-rootfs.qcow2";
-      sha256 = "2a4e4faf6da6ec6c45f51f4cfc7eb62e50931c3dade267f3d9c6de180e4af401";
+      sha256 = "ba4ba11b94a2fcce436fe87c3947214f84353b4e3365728b11fefc5f26e78b67";
     };
   };
 
@@ -90,7 +90,7 @@ in
       type = lib.types.path;
       default = pkgs.fetchurl {
         url = "${releaseBase}/initrd";
-        sha256 = "ca3db42ceb650d731173a6a1f5954ec8dc1860560b560626797525c8a5829e52";
+        sha256 = "429f13682c62cb404eb005fd44ab7302c624ef756f3ade6146c169634fe1c6f3";
       };
       description = ''
         装配后的 initramfs（已注入 ext4 依赖链，本仓库 release asset）。
