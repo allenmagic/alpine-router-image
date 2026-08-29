@@ -29,6 +29,8 @@
 [pm] app-misc/fastfetch
 [pm] net-dns/dnsmasq
 [pm] net-firewall/nftables
+# keepalived 运行时依赖 libmagic.so.1（MIME 文件检查），需显式装 file 提供
+[pm] sys-apps/file
 [pm] sys-cluster/keepalived
 [pm] net-vpn/tailscale
 [dl@https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64] cloudflared
