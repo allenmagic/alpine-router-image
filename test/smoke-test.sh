@@ -148,9 +148,8 @@ _is_current() {
 
 verify() {
     local distro="$1"
-    if [ "$FORCE_DOWNLOAD" = 1 ] || [ ! -f "$SUMS" ]; then
-        fetch "$BASE/SHA256SUMS" "$SUMS"
-    fi
+    # 始终拉最新 SHA256SUMS，确保校验针对最新 release（而非缓存里的旧 sums）
+    fetch "$BASE/SHA256SUMS" "$SUMS"
 
     local f
     for f in vmlinuz-virt initrd "${distro}-rootfs.qcow2"; do
@@ -165,10 +164,8 @@ verify() {
 
 download() {
     local distro="$1"
-    # 先拉 SHA256SUMS，用它判断缓存是否已是最新（避免重复下载过期/已是最新的文件）
-    if [ "$FORCE_DOWNLOAD" = 1 ] || [ ! -f "$SUMS" ]; then
-        fetch "$BASE/SHA256SUMS" "$SUMS"
-    fi
+    # 始终拉最新 SHA256SUMS（很小），作为判断缓存是否最新的唯一依据
+    fetch "$BASE/SHA256SUMS" "$SUMS"
 
     local f
     for f in vmlinuz-virt initrd "${distro}-rootfs.qcow2"; do
