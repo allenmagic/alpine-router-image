@@ -17,7 +17,7 @@
 #   --backend NAME    qemu | cloud-hypervisor（默认 qemu）
 #   --assets-dir DIR  资产缓存目录（默认 <仓库>/build/smoke-assets，已被 .gitignore 忽略）
 #   --no-download     跳过下载，只用缓存里已有的文件
-#   --force-download  忽略缓存，强制重新下载（重 CI 后同名 assets 更新时用）
+#   --force-download  无条件重新下载（默认已会按 sha256 自动刷新过期缓存）
 #   --verify-only     只下载 + 校验 sha256，不启动
 #   --loglevel N      追加内核参数 loglevel=N（0-7，默认不追加；3 可屏蔽 nft warn 级日志对串口的干扰）
 #   --proxy           下载走 proxychains 代理（默认 auto：装了 proxychains 就自动用）
@@ -37,7 +37,7 @@ TAG=""                                        # 空 = 自动探测
 BACKEND="qemu"
 ASSETS_DIR="${REPO_ROOT}/build/smoke-assets"
 DO_DOWNLOAD=1
-FORCE_DOWNLOAD=0   # --force-download：忽略缓存，强制重新下载
+FORCE_DOWNLOAD=0   # --force-download：无条件重新下载（默认按 sha256 自动刷新）
 VERIFY_ONLY=0
 LOGLEVEL=""      # 空 = 不追加 loglevel；如 --loglevel 3
 PROXY_MODE="auto"   # auto | on | off（下载是否走 proxychains）
@@ -132,37 +132,52 @@ fetch() {
     $PROXY curl -sSLf --retry 3 -o "$out" "$url" || die "下载失败: $url"
 }
 
+# SHA256SUMS 路径（判断缓存是否最新的依据）
+SUMS="${ASSETS_DIR}/SHA256SUMS"
+
 # 校验：SHA256SUMS 里 initrd/vmlinuz-virt 因双发行版各写一次而存在重复条目，
 # 且 initrd 两条哈希不同（gzip 未加 -n 烙了时间戳）——所以判定规则是
 # 「命中同名文件下的任意一条」即可，而不是 sha256sum -c 的严格一一对应。
+# 返回 0 = 缓存文件的 sha256 命中（已是最新），非 0 = 缺失或过期。
+_is_current() {
+    local f="$1" h
+    [ -f "${ASSETS_DIR}/${f}" ] || return 1
+    h="$(sha256sum "${ASSETS_DIR}/${f}" | awk '{print $1}')"
+    awk -v n="$f" -v h="$h" '$2==n && $1==h {found=1} END{exit !found}' "$SUMS"
+}
+
 verify() {
     local distro="$1"
-    local sums="${ASSETS_DIR}/SHA256SUMS"
-    if [ "$FORCE_DOWNLOAD" = 1 ] || [ ! -f "$sums" ]; then
-        fetch "$BASE/SHA256SUMS" "$sums"
+    if [ "$FORCE_DOWNLOAD" = 1 ] || [ ! -f "$SUMS" ]; then
+        fetch "$BASE/SHA256SUMS" "$SUMS"
     fi
 
-    local f h
+    local f
     for f in vmlinuz-virt initrd "${distro}-rootfs.qcow2"; do
         [ -f "${ASSETS_DIR}/${f}" ] || die "缺失 ${ASSETS_DIR}/${f}（去掉 --no-download 或先下载）"
-        h="$(sha256sum "${ASSETS_DIR}/${f}" | awk '{print $1}')"
-        if awk -v n="$f" -v h="$h" '$2==n && $1==h {found=1} END{exit !found}' "$sums"; then
+        if _is_current "$f"; then
             log "  ✓ ${f}"
         else
-            die "  ✗ ${f}: 校验失败（${h} 不在 release SHA256SUMS 中）"
+            die "  ✗ ${f}: 校验失败（sha256 不在 release SHA256SUMS 中）"
         fi
     done
 }
 
 download() {
     local distro="$1"
+    # 先拉 SHA256SUMS，用它判断缓存是否已是最新（避免重复下载过期/已是最新的文件）
+    if [ "$FORCE_DOWNLOAD" = 1 ] || [ ! -f "$SUMS" ]; then
+        fetch "$BASE/SHA256SUMS" "$SUMS"
+    fi
+
     local f
     for f in vmlinuz-virt initrd "${distro}-rootfs.qcow2"; do
         if [ "$FORCE_DOWNLOAD" = 1 ]; then
             fetch "$BASE/$f" "${ASSETS_DIR}/${f}"
-        elif [ -f "${ASSETS_DIR}/${f}" ]; then
-            log "已缓存 ${f}，跳过下载"
+        elif _is_current "$f"; then
+            log "已是最新 ${f}，跳过下载"
         else
+            [ -f "${ASSETS_DIR}/${f}" ] && log "缓存过期 ${f}，重新下载"
             fetch "$BASE/$f" "${ASSETS_DIR}/${f}"
         fi
     done
