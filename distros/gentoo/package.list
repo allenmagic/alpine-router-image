@@ -25,9 +25,6 @@
 [pm] sys-apps/util-linux
 [pm] sys-libs/timezone-data
 [pm] sys-apps/openrc
-# OpenRC 网络框架（提供 /etc/init.d/net.lo，net.eth0/eth1 符号链接依赖它）；
-# WAN 口 DHCP 用 busybox 自带 udhcpc，无需额外装 dhcpcd
-[pm] net-misc/netifrc
 [pm] sys-process/procps
 [pm] app-misc/fastfetch
 [pm] net-dns/dnsmasq

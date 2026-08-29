@@ -5,23 +5,10 @@
 #
 
 configure_network() {
-    echo "[network] === 配置网络 (Alpine/ifupdown) ==="
+    echo "[network] === 配置网络 (OpenRC network 服务 + udhcpc) ==="
     . /network.env
 
     _replace_placeholders
-
-    cat > /etc/network/interfaces << EOF
-auto lo
-iface lo inet loopback
-
-auto ${WAN_IFACE}
-iface ${WAN_IFACE} inet dhcp
-
-auto ${LAN_IFACE}
-iface ${LAN_IFACE} inet static
-    address ${LAN_IP}
-    netmask ${LAN_NETMASK}
-EOF
 
     echo "[network] === 网络配置完成 ==="
 }
@@ -65,5 +52,16 @@ _replace_placeholders() {
             -e "s|__TS_HOSTNAME__|${TS_HOSTNAME}|g" \
             -e "s|__TS_ADVERTISE_ROUTES__|\"${TS_ADVERTISE_ROUTES}\"|g" \
             "${_TS}"
+    fi
+
+    # network 服务（WAN/LAN 接口与 IP）
+    _NET="/etc/init.d/network"
+    if [ -f "${_NET}" ]; then
+        sed -i \
+            -e "s|__WAN_IFACE__|${WAN_IFACE}|g" \
+            -e "s|__LAN_IFACE__|${LAN_IFACE}|g" \
+            -e "s|__LAN_IP__|${LAN_IP}|g" \
+            -e "s|__LAN_CIDR__|${LAN_CIDR}|g" \
+            "${_NET}"
     fi
 }

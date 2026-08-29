@@ -13,15 +13,8 @@ enable_router_services() {
     _enable_service syslogd
     _enable_service crond
 
-    # --- 网络接口服务 ---
-    # 从 network.env 读取接口配置
-    . /network.env 2>/dev/null || true
-    _enable_service net.lo boot
-    _enable_service "net.${WAN_IFACE:-eth0}"
-    # LAN 接口：仅在设置且不同于 WAN 时才启用独立服务
-    if [ -n "${LAN_IFACE:-}" ] && [ "${LAN_IFACE}" != "${WAN_IFACE:-eth0}" ]; then
-        _enable_service "net.${LAN_IFACE}"
-    fi
+    # --- 网络服务（base/init/openrc/network：udhcpc + ip 直接配置）---
+    _enable_service network
 
     # --- base 应用服务（按依赖顺序）---
     # 1. 防火墙（最先加载）

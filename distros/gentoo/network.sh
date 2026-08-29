@@ -5,21 +5,10 @@
 #
 
 configure_network() {
-    echo "[network] === 配置网络 (Gentoo/netifrc) ==="
+    echo "[network] === 配置网络 (OpenRC network 服务 + udhcpc) ==="
     . /network.env
 
     _replace_placeholders
-
-    # netifrc 配置：WAN DHCP（显式用 busybox udhcpc）+ LAN static
-    cat > "${TARGET_ROOTFS}/etc/conf.d/net" << EOF
-config_${WAN_IFACE}="dhcp"
-dhcpclient_${WAN_IFACE}="udhcpc"
-config_${LAN_IFACE}="${LAN_IP}/${LAN_CIDR}"
-EOF
-
-    # 激活 netifrc 接口（符号链接 /etc/init.d/net.lo -> net.<iface>）
-    ln -sf net.lo "${TARGET_ROOTFS}/etc/init.d/net.${LAN_IFACE}"
-    ln -sf net.lo "${TARGET_ROOTFS}/etc/init.d/net.${WAN_IFACE}"
 
     echo "[network] === 网络配置完成 ==="
 }
@@ -65,5 +54,16 @@ _replace_placeholders() {
             -e "s|__TS_HOSTNAME__|${TS_HOSTNAME}|g" \
             -e "s|__TS_ADVERTISE_ROUTES__|\"${TS_ADVERTISE_ROUTES}\"|g" \
             "${_TS}"
+    fi
+
+    # network 服务（WAN/LAN 接口与 IP）
+    _NET="${TARGET_ROOTFS}/etc/init.d/network"
+    if [ -f "${_NET}" ]; then
+        sed -i \
+            -e "s|__WAN_IFACE__|${WAN_IFACE}|g" \
+            -e "s|__LAN_IFACE__|${LAN_IFACE}|g" \
+            -e "s|__LAN_IP__|${LAN_IP}|g" \
+            -e "s|__LAN_CIDR__|${LAN_CIDR}|g" \
+            "${_NET}"
     fi
 }

@@ -1,0 +1,39 @@
+#!/sbin/openrc-run
+# 网络配置（无框架）：WAN DHCP（busybox udhcpc）+ LAN 静态 IP
+# 占位符由构建期 network.sh 按 network.env 替换：
+#   __WAN_IFACE__ / __LAN_IFACE__ / __LAN_IP__ / __LAN_CIDR__
+# 提供 "net" 虚拟服务：keepalived/dnsmasq 等 need net 的服务在它之后启动。
+# 注意：keepalived 的 VRRP 浮动 IP（.254）叠加在 LAN 接口上，本服务只配静态 IP 不碰它。
+
+WAN_IFACE="__WAN_IFACE__"
+LAN_IFACE="__LAN_IFACE__"
+LAN_IP="__LAN_IP__"
+LAN_CIDR="__LAN_CIDR__"
+
+depend() {
+    provide net
+    before dnsmasq keepalived
+}
+
+start() {
+    ebegin "Configuring network (${WAN_IFACE} dhcp, ${LAN_IFACE} static)"
+    local rc=0
+
+    # LAN 静态 IP（keepalived 的 VRRP 浮动 IP 会叠加在此接口上）
+    ip link set "${LAN_IFACE}" up || rc=1
+    ip addr replace "${LAN_IP}/${LAN_CIDR}" dev "${LAN_IFACE}" || rc=1
+
+    # WAN DHCP（后台常驻，自动续约）
+    ip link set "${WAN_IFACE}" up || rc=1
+    udhcpc -i "${WAN_IFACE}" -p "/run/udhcpc-${WAN_IFACE}.pid" >/dev/null 2>&1 &
+
+    eend $rc
+}
+
+stop() {
+    ebegin "Stopping network"
+    [ -f "/run/udhcpc-${WAN_IFACE}.pid" ] && kill "$(cat "/run/udhcpc-${WAN_IFACE}.pid")" 2>/dev/null
+    ip addr flush dev "${WAN_IFACE}" 2>/dev/null
+    ip addr flush dev "${LAN_IFACE}" 2>/dev/null
+    eend 0
+}

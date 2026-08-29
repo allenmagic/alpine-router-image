@@ -62,51 +62,14 @@ check_and_restart() {
         log "[WARN] LAN 接口异常（IP 不匹配）"
     fi
 
-    log "[INFO] 开始重启网络服务..."
-
-    # 重启 LAN 接口
-    if [ "$lan_ok" -eq 0 ]; then
-        log "[INFO] 重启 LAN 接口 ${LAN_IF}..."
-        # Alpine/Debian: ifupdown
-        if command -v ifdown >/dev/null 2>&1; then
-            ifdown "$LAN_IF" 2>/dev/null || true
-            sleep 1
-            ifup "$LAN_IF" 2>/dev/null || true
-        # Gentoo: netifrc
-        elif rc-service --exists "net.${LAN_IF}" 2>/dev/null; then
-            rc-service "net.${LAN_IF}" restart 2>/dev/null || true
-        # 通用: 手动 ip 命令
-        else
-            ip link set "$LAN_IF" down 2>/dev/null || true
-            sleep 1
-            ip link set "$LAN_IF" up 2>/dev/null || true
-        fi
-    fi
-
-    # 重启 WAN 接口
-    if [ "$wan_ok" -eq 0 ]; then
-        log "[INFO] 重启 WAN 接口 ${WAN_IF}..."
-        # Alpine/Debian: ifupdown
-        if command -v ifdown >/dev/null 2>&1; then
-            ifdown "$WAN_IF" 2>/dev/null || true
-            sleep 2
-            ifup "$WAN_IF" 2>/dev/null || true
-        # Gentoo: netifrc
-        elif rc-service --exists "net.${WAN_IF}" 2>/dev/null; then
-            rc-service "net.${WAN_IF}" restart 2>/dev/null || true
-        # 通用: 手动 ip 命令
-        else
-            ip link set "$WAN_IF" down 2>/dev/null || true
-            sleep 2
-            ip link set "$WAN_IF" up 2>/dev/null || true
-        fi
-
-        # PPPoE: 重启拨号
-        if ip link show ppp0 >/dev/null 2>&1; then
-            log "[INFO] 重启 PPPoE 拨号..."
-            killall pppd 2>/dev/null || true
-            rc-service ppp.wan restart 2>/dev/null || true
-        fi
+    log "[INFO] 重启网络服务 network（WAN DHCP + LAN 静态）..."
+    if rc-service --exists network 2>/dev/null; then
+        rc-service network restart 2>/dev/null || true
+    else
+        # 兜底：无 network 服务时手动拉起接口
+        ip link set "$WAN_IF" up 2>/dev/null || true
+        ip link set "$LAN_IF" up 2>/dev/null || true
+        ip addr replace "${LAN_IP}/24" dev "$LAN_IF" 2>/dev/null || true
     fi
 
     # 重启路由服务
