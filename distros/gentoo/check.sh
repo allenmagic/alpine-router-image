@@ -67,6 +67,8 @@ check_rootfs() {
     _check_openrc tailscale default
     _check_openrc cloudflared default
     _check_openrc network-watchdog
+    _check_openrc network
+    _check_openrc keepalived
 
     # ---------- 4. 额外检查：自定义 init 脚本完整性 ----------
     echo "[check] Gentoo 自定义 init 脚本:"

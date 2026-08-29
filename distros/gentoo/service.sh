@@ -34,6 +34,9 @@ enable_router_services() {
     # 5. 监控服务
     _enable_service network-watchdog
 
+    # 6. 浮动网关（VRRP）
+    _enable_service keepalived
+
     # 移除 headless 路由器不需要的键盘服务（依赖未安装的 kbd 包）
     rm -f "${TARGET_ROOTFS}/etc/runlevels/boot/keymaps" \
           "${TARGET_ROOTFS}/etc/runlevels/boot/save-keymaps" \
