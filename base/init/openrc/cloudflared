@@ -16,7 +16,11 @@ depend() {
     use logger dns
 }
 
-# Token 从 /etc/cloudflared/config.yml 读取，不在脚本中硬编码
-# start_pre() {
-#     checkpath -f /etc/cloudflared/config.yml || return 1
-# }
+start_pre() {
+    # 预检：应用安装 + 配置完整（含非空 token）；不满足则跳过，不 crash
+    [ -x /usr/local/bin/cloudflared ] || { eerror "cloudflared 未安装"; return 1; }
+    if ! grep -qE '^token:[[:space:]]*[^[:space:]]' /etc/cloudflared/config.yml 2>/dev/null; then
+        ewarn "未注入 Cloudflared token，跳过启动（等待 alpine-router-deploy 注入）"
+        return 1
+    fi
+}

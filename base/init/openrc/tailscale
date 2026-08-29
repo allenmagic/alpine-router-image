@@ -15,4 +15,10 @@ depend() {
 
 start_pre() {
     mkdir -p /var/lib/tailscale /run/tailscale
+    # 预检：应用安装 + 配置完整（authkey 已注入）；不满足则跳过，不空转
+    [ -x /usr/sbin/tailscaled ] || { eerror "tailscaled 未安装"; return 1; }
+    if [ ! -s /etc/tailscale/authkey ]; then
+        ewarn "未注入 Tailscale authkey，跳过启动（等待 alpine-router-deploy 注入）"
+        return 1
+    fi
 }
