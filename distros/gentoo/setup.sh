@@ -368,11 +368,12 @@ stop() {
 INITEOF
 chmod 755 "${TARGET_ROOTFS}/etc/init.d/crond"
 
-# 配置时区
-if [ -f "/usr/share/zoneinfo/${TIMEZONE}" ]; then
-    cp "/usr/share/zoneinfo/${TIMEZONE}" "${TARGET_ROOTFS}/etc/localtime" 2>/dev/null || true
+# 配置时区（timezone-data 是 ROOT= 装进目标 rootfs 的，路径要加 TARGET_ROOTFS 前缀，
+# 否则检查的是 stage3 构建环境里的 /usr/share/zoneinfo，那里没有，时区会落到 UTC）
+if [ -f "${TARGET_ROOTFS}/usr/share/zoneinfo/${TIMEZONE}" ]; then
+    cp "${TARGET_ROOTFS}/usr/share/zoneinfo/${TIMEZONE}" "${TARGET_ROOTFS}/etc/localtime" 2>/dev/null || true
 else
-    echo "[setup] 警告：时区文件 /usr/share/zoneinfo/${TIMEZONE} 不存在" >&2
+    echo "[setup] 警告：时区文件 ${TARGET_ROOTFS}/usr/share/zoneinfo/${TIMEZONE} 不存在" >&2
 fi
 
 # ============================================================
