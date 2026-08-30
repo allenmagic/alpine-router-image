@@ -3,9 +3,6 @@
 name=$RC_SVCNAME
 description="Cloudflare Tunnel"
 
-command="/usr/local/bin/cloudflared"
-command_args="--no-autoupdate --config /etc/cloudflared/config.yml tunnel run"
-command_background="yes"
 pidfile="/var/run/$name.pid"
 output_log="/var/log/$name.log"
 error_log="/var/log/$name.log"
@@ -16,11 +13,22 @@ depend() {
     use logger dns
 }
 
-start_pre() {
-    # 预检：应用安装 + 配置完整（含非空 token）；不满足则跳过，不 crash
+start() {
+    # 预检：应用安装 + 配置完整（含非空 token）；不满足则跳过（stopped，不 crash）
     [ -x /usr/local/bin/cloudflared ] || { eerror "cloudflared 未安装"; return 1; }
     if ! grep -qE '^token:[[:space:]]*[^[:space:]]' /etc/cloudflared/config.yml 2>/dev/null; then
         ewarn "未注入 Cloudflared token，跳过启动（等待 alpine-router-deploy 注入）"
         return 1
     fi
+    ebegin "Starting cloudflared"
+    start-stop-daemon --start --quiet --background --make-pidfile --pidfile "$pidfile" \
+        --stdout "$output_log" --stderr "$error_log" \
+        --exec /usr/local/bin/cloudflared -- --no-autoupdate --config /etc/cloudflared/config.yml tunnel run
+    eend $?
+}
+
+stop() {
+    ebegin "Stopping cloudflared"
+    start-stop-daemon --stop --quiet --pidfile "$pidfile"
+    eend $?
 }

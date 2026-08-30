@@ -3,8 +3,6 @@
 name=$RC_SVCNAME
 description="Tailscale agent"
 
-command="/usr/sbin/tailscaled"
-command_background="yes"
 pidfile="/var/run/$name.pid"
 
 depend() {
@@ -15,10 +13,23 @@ depend() {
 
 start_pre() {
     mkdir -p /var/lib/tailscale /run/tailscale
-    # 预检：应用安装 + 配置完整（authkey 已注入）；不满足则跳过，不空转
+}
+
+start() {
+    # 预检：应用安装 + 配置完整（authkey 已注入）；不满足则跳过（stopped，不 crash）
     [ -x /usr/sbin/tailscaled ] || { eerror "tailscaled 未安装"; return 1; }
     if [ ! -s /etc/tailscale/authkey ]; then
         ewarn "未注入 Tailscale authkey，跳过启动（等待 alpine-router-deploy 注入）"
         return 1
     fi
+    ebegin "Starting tailscaled"
+    start-stop-daemon --start --quiet --background --make-pidfile --pidfile "$pidfile" \
+        --exec /usr/sbin/tailscaled
+    eend $?
+}
+
+stop() {
+    ebegin "Stopping tailscaled"
+    start-stop-daemon --stop --quiet --pidfile "$pidfile"
+    eend $?
 }
