@@ -2,8 +2,9 @@
 
 ## 概述
 
-dnsmasq 同时承担 LAN 的 **DHCP 分配**与 **DNS 解析**（转发上游公共 DNS），
-仅监听 LAN 接口。透明代理/策略分流由 yunshu 容器负责，本服务不参与。
+dnsmasq 负责 LAN 的 **DHCP 分配**，并提供 **fallback DNS**。
+正常路径下，客户端 DNS 指向 VRRP 浮动地址，由 yunshu 容器接管并做策略分流；
+只有 yunshu 容器故障、VRRP 切回本 VM 时，dnsmasq 才临时承担普通 DNS 解析。
 
 ## 关键文件
 
@@ -20,17 +21,22 @@ dnsmasq 同时承担 LAN 的 **DHCP 分配**与 **DNS 解析**（转发上游公
 - **权威 DHCP**: `dhcp-authoritative` 加速客户端获取 IP。
 - **地址池**: `192.168.10.100-192.168.10.200`，租期 12 小时（`network.env` 的 `DHCP_RANGE_*`）。
 - **下发网关**: `__LAN_GATEWAY__`（浮动 IP `192.168.10.254`，VRRP 主备持有：yunshu MASTER / 本 VM BACKUP）。
-- **下发 DNS**: `__LAN_IP__`（`192.168.10.1`，即路由器自身——dnsmasq 转发上游解析）。
+- **下发 DNS**: `__LAN_GATEWAY__`（VRRP 浮动 IP `192.168.10.254`）。
+  正常时该地址在 yunshu 容器上，DNS 进容器后交给 YunShu；容器故障时该地址
+  漂移到本 VM，`bind-dynamic` 使 dnsmasq 自动监听并作为 fallback DNS。
 - **租约文件**: `/var/lib/misc/dnsmasq.leases`。
 
 ## 约定
 
 - LAN 接口固定为 `eth1`，WAN 接口固定为 `eth0`（权威源 `network.env`，`network.sh` 构建时替换全部 `__XXX__` 占位符）。
-- DNS 由 dnsmasq 自身解析并转发 `20-upstream-dns.conf` 的上游，不要在别处再启 DNS 服务（53 端口冲突）。
+- 正常 DNS 由 yunshu 容器负责；本 VM 的 dnsmasq 只作为 VRRP 故障切换后的 fallback。
+- fallback 上游固定由 `20-upstream-dns.conf` 提供，并配置 `no-resolv`，避免依赖本机 resolv.conf。
+- 不要在本 VM 再启动其他 53 端口服务，避免与 dnsmasq fallback 冲突。
 - 修改 DHCP 网段/地址池时同步更新：`network.env` + nftables 变量（`__LAN_NET__` 等）+ NAS 侧 `modules/network/bridges.nix` 等。
 
 ## 反模式（本项目）
 
 - 不要在 WAN 口开启 DHCP（`interface` 已限定 LAN，保持）。
-- 不要在 dnsmasq 里关闭 DNS（`port=0` 是 r3s/sing-box 时代的做法，当前 dnsmasq 就是 DNS 服务）。
+- 不要在 dnsmasq 里关闭 DNS（`port=0` 会让容器故障后没有 fallback DNS）。
+- 不要把 dnsmasq 的上游再指向 VRRP 自己（`server=__LAN_GATEWAY__`），否则本 VM 接管 VRRP 时可能形成查询回环。
 - 不要在这里配置透明代理相关劫持——那是 yunshu 容器的职责。
