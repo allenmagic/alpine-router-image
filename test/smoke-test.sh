@@ -22,7 +22,7 @@
 #   --kernel VARIANT  virt | router（默认 virt），对应 router.nix 的
 #                     microvm.router.kernel。两者都从同一 release 下载并校验：
 #                       virt   → vmlinuz-virt   + initrd（10.3M，注入 ext4 依赖链）
-#                       router → vmlinuz-router + initramfs-empty.gz（50 字节占位）
+#                       router → vmlinuz-router + initramfs-empty.cpio（512 字节未压缩空 cpio）
 #   --no-initrd       不传 initrd。router 变体全 builtin，占位 initramfs 只为满足
 #                     microvm.nix 的无条件 --initramfs；本地可直接省掉它
 #   --assert          tee 启动日志并断言：FATAL: Module / Function not
@@ -104,7 +104,7 @@ esac
 # 不影响本表）。
 case "$KERNEL" in
     virt)   KERNEL_ASSET="vmlinuz-virt";   INITRD_ASSET="initrd" ;;
-    router) KERNEL_ASSET="vmlinuz-router"; INITRD_ASSET="initramfs-empty.gz" ;;
+    router) KERNEL_ASSET="vmlinuz-router"; INITRD_ASSET="initramfs-empty.cpio" ;;
     *) die "未知内核变体: $KERNEL（支持 virt | router）" ;;
 esac
 

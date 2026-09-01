@@ -113,7 +113,7 @@ qemu-img convert -f raw -O qcow2 "$WORK/rootfs.ext4" "$WORK/${DISTRO}-rootfs.qco
 
 # ---------- 5. 输出 ----------
 # virt 变体的三件套（vmlinuz-virt + 注入 ext4 的 initrd）与 rootfs。
-# router 变体的内核资产（vmlinuz-router / initramfs-empty.gz）由
+# router 变体的内核资产（vmlinuz-router / initramfs-empty.cpio）由
 # kernel/build.sh 产在 kernel/out/，CI 在 release 作业里一并上传——不在此
 # 复制，避免两个发行版的并行装配作业重复产出同一份内核。
 cp "$WORK/vmlinuz-virt" "$WORK/initrd" "$WORK/${DISTRO}-rootfs.qcow2" "$OUT_DIR/"

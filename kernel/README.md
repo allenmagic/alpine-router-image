@@ -24,7 +24,7 @@ NF_TABLES=m  NF_CONNTRACK=m  TUN=m  TCP_CONG_BBR=m  NET_SCH_FQ=m
 | | Alpine `linux-virt` | 自建 |
 |---|---|---|
 | 内核 | 12M | 4.0M |
-| initramfs | 10.3M（注入 ext4） | 50 字节空 cpio 占位 |
+| initramfs | 10.3M（注入 ext4） | 512 字节未压缩空 cpio 占位 |
 | 模块 | 7.0M / 376 个 `.ko` | 112K 纯元数据 / 0 个 `.ko` |
 | `=y` / `=m` | 1672 / 896 | 715 / 0 |
 | 构建耗时 | — | 122s @ -j20 |
@@ -57,12 +57,12 @@ sha256 —— 与 `router.nix` 的 `microvm.router.kernel` 同名同义，测的
 | 文件 | 用途 |
 |---|---|
 | `vmlinuz-router` | bzImage。qemu `-kernel` 与 CH `--kernel` 都用它，是正常引导路径 |
-| `initramfs-empty.gz` | 50 字节空 cpio。见下方「为什么还要 initramfs」 |
+| `initramfs-empty.cpio` | 512 字节未压缩空 cpio。见下方「为什么还要 initramfs」 |
 | `modules/lib/modules/<版本串>/` | depmod 元数据，由 `assemble.sh` 注入 rootfs |
 | `config-router` | 完整 `.config`，供查阅与复现（消费端不 fetch） |
 | `vmlinux-router` | ELF。当前不发布，见下方「vmlinux 的定位」 |
 
-资产名不带版本号：`custom` 只有一个变体，release tag
+资产名不带版本号：`router` 只有一个变体，release tag
 （`microvm-router-vm-YYYYMMDD`）已承担版本区分。带版本会让每次 point release
 bump 都要手改 `router.nix` 的 url，`sync-flake-sha.py` 的锚定正则也会失配。
 

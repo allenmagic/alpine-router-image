@@ -152,12 +152,16 @@ log "模块元数据: $(du -sh "$MODDIR" | cut -f1)（builtin 项 $(wc -l < "$MO
 #   check access for rdinit=/init failed: -2, ignoring
 # 随后正常走 root=/dev/vda（CH v53 本地实测）。这样五个 runner 全部适用，
 # 上游一行不用改；将来上游把 --initramfs 改成条件项后可直接弃用本产物。
-: | cpio --null -o --format=newc 2>/dev/null | gzip -9 > "$OUT_DIR/initramfs-empty.gz"
-log "空 initramfs: $(stat -c%s "$OUT_DIR/initramfs-empty.gz") 字节（Alpine initrd 参照: 10.3M）"
+#
+# 未压缩：内核原生支持未压缩 cpio（无需任何 CONFIG_RD_* 解压器），而 gzip 需要
+# CONFIG_RD_GZIP=y 即 zlib 依赖——为解压 50 字节空文件增加内核体积违背 router
+# 变体的精简原则。512 字节 vs 50 字节对传输/存储影响可忽略。
+: | cpio --null -o --format=newc 2>/dev/null > "$OUT_DIR/initramfs-empty.cpio"
+log "空 initramfs: $(stat -c%s "$OUT_DIR/initramfs-empty.cpio") 字节（Alpine initrd 参照: 10.3M）"
 
 # vmlinux 不入 SHA256SUMS：当前 CH 走 bzImage 路径不消费它，它只是将来切 PVH
 # 的后路与宿主侧 gdb/crash 的符号来源，无需作为 release 资产发布
-(cd "$OUT_DIR" && sha256sum vmlinuz-router config-router initramfs-empty.gz > SHA256SUMS)
+(cd "$OUT_DIR" && sha256sum vmlinuz-router config-router initramfs-empty.cpio > SHA256SUMS)
 
 log "完成："
 ls -la "$OUT_DIR"
