@@ -43,8 +43,14 @@ JOBS=8 ./kernel/build.sh           # 覆盖并行度
 本地测试（`--assert` 会把启动日志变成断言）：
 
 ```bash
-test/smoke-test.sh alpine --kernel kernel/out/vmlinuz-router --no-initrd --assert
+test/smoke-test.sh alpine --kernel custom --assert              # 用 release 的自建内核
+test/smoke-test.sh alpine --kernel custom --no-initrd --assert  # 连空占位也不传
 ```
+
+`--kernel` 取变体名（`alpine` | `custom`）而非路径，从 release 下载并校验
+sha256 —— 与 `router.nix` 的 `microvm.router.kernel` 同名同义，测的就是消费端
+实际会拿到的东西。测本地刚构建、尚未发布的 `kernel/out/vmlinuz-router` 目前
+没有直通口子，后续另做。
 
 ## 产物
 

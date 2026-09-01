@@ -12,14 +12,19 @@
 #   test/smoke-test.sh alpine --verify-only     # 只下载+校验，不启动
 #   test/smoke-test.sh gentoo --backend cloud-hypervisor
 #
-#   # 用 kernel/build.sh 产出的自建内核测 release rootfs（全 builtin，无需 initrd）
-#   test/smoke-test.sh alpine --kernel kernel/out/vmlinuz-router --no-initrd
+#   # 用 release 里的自建内核（全 builtin）测同一批 rootfs
+#   test/smoke-test.sh alpine --kernel custom
+#   test/smoke-test.sh alpine --kernel custom --no-initrd   # 连空占位也不传
 #
 # 选项:
 #   --tag TAG         release tag（默认自动探测 GitHub 最新）
 #   --backend NAME    qemu | cloud-hypervisor（默认 qemu）
-#   --kernel PATH     用本地内核替代 release 的 vmlinuz-virt（不下载/不校验它）
-#   --no-initrd       不传 initrd（自建内核 ext4/virtio 全 builtin 时用）
+#   --kernel VARIANT  alpine | custom（默认 alpine），对应 router.nix 的
+#                     microvm.router.kernel。两者都从同一 release 下载并校验：
+#                       alpine → vmlinuz-virt   + initrd（10.3M，注入 ext4 依赖链）
+#                       custom → vmlinuz-router + initramfs-empty.gz（50 字节占位）
+#   --no-initrd       不传 initrd。custom 变体全 builtin，占位 initramfs 只为满足
+#                     microvm.nix 的无条件 --initramfs；本地可直接省掉它
 #   --assert          tee 启动日志并断言：FATAL: Module / Function not
 #                     implemented / hwclock: / Kernel panic 一律视为失败
 #                     （内核能启动 ≠ 能力完整；openrc 的 modules 服务结构上
@@ -52,8 +57,8 @@ LOGLEVEL=""      # 空 = 不追加 loglevel；如 --loglevel 3
 PROXY_MODE="auto"   # auto | on | off（下载是否走 proxychains）
 PROXY=""            # 实际前缀命令（resolve 后，空 = 直连）
 DISTRO=""
-KERNEL=""           # --kernel：本地内核路径（空 = 用 release 的 vmlinuz-virt）
-USE_INITRD=1        # --no-initrd：置 0（自建内核全 builtin，不需要 initramfs）
+KERNEL="alpine"     # --kernel：内核变体 alpine | custom（都从 release 取）
+USE_INITRD=1        # --no-initrd：置 0（custom 全 builtin，占位 initramfs 可省）
 ASSERT=0            # --assert：tee 启动日志并断言（无 FATAL/ENOSYS/panic 等）
 
 usage() {
@@ -77,7 +82,7 @@ while [ $# -gt 0 ]; do
         --force-download) FORCE_DOWNLOAD=1; shift ;;
         --verify-only) VERIFY_ONLY=1; shift ;;
         --loglevel)    LOGLEVEL="${2:?--loglevel 需要值(0-7)}"; shift 2 ;;
-        --kernel)      KERNEL="${2:?--kernel 需要值}"; shift 2 ;;
+        --kernel)      KERNEL="${2:?--kernel 需要值(alpine|custom)}"; shift 2 ;;
         --no-initrd)   USE_INITRD=0; shift ;;
         --assert)      ASSERT=1; shift ;;
         --proxy)       PROXY_MODE="on"; shift ;;
@@ -94,15 +99,14 @@ case "$BACKEND" in
     *) die "未知后端: $BACKEND（支持 qemu | cloud-hypervisor）" ;;
 esac
 
-# --kernel：本地内核不参与 release 的下载/校验流程，只做存在性检查。
-# 相对路径按仓库根解析，便于 `test/smoke-test.sh ... --kernel kernel/out/...`
-if [ -n "$KERNEL" ]; then
-    case "$KERNEL" in
-        /*) ;;
-        *) KERNEL="${REPO_ROOT}/${KERNEL}" ;;
-    esac
-    [ -f "$KERNEL" ] || die "内核不存在: $KERNEL（先跑 kernel/build.sh）"
-fi
+# 内核变体 → release 资产名。与 nixos-modules/router.nix 的 kernelVariants
+# 一一对应，改那边要同步改这里（资产名不带版本号，故 LTS point release bump
+# 不影响本表）。
+case "$KERNEL" in
+    alpine) KERNEL_ASSET="vmlinuz-virt";   INITRD_ASSET="initrd" ;;
+    custom) KERNEL_ASSET="vmlinuz-router"; INITRD_ASSET="initramfs-empty.gz" ;;
+    *) die "未知内核变体: $KERNEL（支持 alpine | custom）" ;;
+esac
 
 mkdir -p "$ASSETS_DIR"
 
@@ -171,12 +175,12 @@ _is_current() {
     awk -v n="$f" -v h="$h" '$2==n && $1==h {found=1} END{exit !found}' "$SUMS"
 }
 
-# 本次真正要用到的 release 资产。--kernel 自带内核、--no-initrd 不要 initramfs，
-# 这两种情况下对应资产既不下载也不校验（缺失也不该报错）。
+# 本次真正要用到的 release 资产。内核/initrd 按 --kernel 变体取名，两个变体
+# 都走同一套下载+校验；--no-initrd 时 initramfs 既不下载也不校验。
 _asset_list() {
     local distro="$1"
-    [ -n "$KERNEL" ]      || printf 'vmlinuz-virt\n'
-    [ "$USE_INITRD" = 0 ] || printf 'initrd\n'
+    printf '%s\n' "$KERNEL_ASSET"
+    [ "$USE_INITRD" = 0 ] || printf '%s\n' "$INITRD_ASSET"
     printf '%s-rootfs.qcow2\n' "$distro"
 }
 
@@ -195,7 +199,7 @@ verify() {
         fi
     done < <(_asset_list "$distro")
 
-    [ -n "$KERNEL" ] && log "  ~ 内核用本地文件（不校验）: ${KERNEL#$REPO_ROOT/}"
+    log "  · 内核变体: ${KERNEL}（${KERNEL_ASSET}）"
     [ "$USE_INITRD" = 0 ] && log "  ~ 不使用 initrd（内核需 ext4/virtio 全 builtin）"
     return 0
 }
@@ -221,8 +225,9 @@ download() {
 # ------------------------------------------------------------
 # 启动（前台，串口直连）
 # ------------------------------------------------------------
-# 内核与 initrd 的实际取值（--kernel / --no-initrd 的落点）
-_kernel_path() { printf '%s' "${KERNEL:-${ASSETS_DIR}/vmlinuz-virt}"; }
+# 内核与 initrd 的实际取值（--kernel 变体 / --no-initrd 的落点）
+_kernel_path() { printf '%s' "${ASSETS_DIR}/${KERNEL_ASSET}"; }
+_initrd_path() { printf '%s' "${ASSETS_DIR}/${INITRD_ASSET}"; }
 
 # ------------------------------------------------------------
 # 启动日志断言
@@ -283,7 +288,7 @@ boot_qemu() {
     command -v qemu-system-x86_64 >/dev/null 2>&1 || \
         die "未找到 qemu-system-x86_64（Arch: sudo pacman -S qemu-base）"
     local initrd_args=()
-    [ "$USE_INITRD" = 1 ] && initrd_args=(-initrd "${ASSETS_DIR}/initrd")
+    [ "$USE_INITRD" = 1 ] && initrd_args=(-initrd "$(_initrd_path)")
     log "qemu 启动 ${distro}（串口直连 ttyS0；退出按 Ctrl-A 然后 X）"
     qemu-system-x86_64 -m 512 -smp 2 \
         -kernel "$(_kernel_path)" \
@@ -308,7 +313,7 @@ boot_ch() {
     log "复制镜像到临时文件（避免污染缓存）..."
     cp "$img" "$scratch"
     local initramfs_args=()
-    [ "$USE_INITRD" = 1 ] && initramfs_args=(--initramfs "${ASSETS_DIR}/initrd")
+    [ "$USE_INITRD" = 1 ] && initramfs_args=(--initramfs "$(_initrd_path)")
     log "cloud-hypervisor 启动 ${distro}（纯 boot 冒烟，未接 tap；Ctrl+C 退出）"
     sudo "$ch" \
         --kernel "$(_kernel_path)" \
