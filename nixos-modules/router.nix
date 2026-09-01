@@ -36,11 +36,11 @@ let
   osAssets = {
     alpine = {
       url = "${releaseBase}/alpine-rootfs.qcow2";
-      sha256 = "ac1d406a1bcd4b9b29c10ad5b76eb48984b24c72a8704f7bb4179311ba847b68";
+      sha256 = "f05fc68c4644f452a5ed8dadbd67c68db0c7916c1da08a283aabebf0b76092b7";
     };
     gentoo = {
       url = "${releaseBase}/gentoo-rootfs.qcow2";
-      sha256 = "abec9aa7594168396e5b6aed30b9112c4fe991b9479a3276d8fe97ceadef1aea";
+      sha256 = "3ad863097b9d60da4ffb4765aac7973692786d100828dc44fc0f9501c4ad6e47";
     };
   };
 
@@ -68,13 +68,13 @@ let
       kernel = { url = "${releaseBase}/vmlinuz-virt";
                  sha256 = "1e6bf9027720c75c3ed0d79171f21b5791ee40ca9795d07c7c6e04dc5ea2ae90"; };
       initrd = { url = "${releaseBase}/initrd";
-                 sha256 = "e71da1fe5fa673c1468ccd59ca375ed6603086955d0a09d49044207b17aaf2d3"; };
+                 sha256 = "ed5fceba386a613811f758b8f447ff1a377bbf184e74c52160cc01122b433135"; };
     };
     custom = {
       kernel = { url = "${releaseBase}/vmlinuz-router";
                  sha256 = "49b1449ac78d9b72f3425299e2da70fa7bf43c06c4434938835e4c087b6e5503"; };
       initrd = { url = "${releaseBase}/initramfs-empty.cpio";
-                 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"; };
+                 sha256 = "c0b1f70675c793df96e958306c94b3086375c35b2e91e497ffc3484bb93228d8"; };
     };
   };
 
