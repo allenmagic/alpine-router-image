@@ -30,10 +30,10 @@ ROOTFS_TARBALL="$(readlink -f "${1:?用法: assemble.sh <rootfs-tarball> [output
 OUT_DIR="$(readlink -f "${2:-dist}")"
 DISTRO="${3:-alpine}"   # rootfs 发行版（决定 rootfs asset 命名；三件套共享）
 
-# 自建内核（router.nix 的 kernel = "custom"）的模块元数据树。存在则注入 rootfs，
+# 自建内核（router.nix 的 kernel = "router"）的模块元数据树。存在则注入 rootfs，
 # 与 modloop 闭包并存（目录名为各自的内核版本串，互不干扰）。缺省取
 # kernel/out/modules——CI 里由独立的 kernel 作业产出后 fan-in 到此。
-# 不存在时静默跳过：只出 alpine 变体的镜像仍然完整可用。
+# 不存在时静默跳过：只出 virt 变体的镜像仍然完整可用。
 CUSTOM_MODULES="${CUSTOM_MODULES:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/kernel/out/modules}"
 [ -d "$CUSTOM_MODULES/lib/modules" ] || CUSTOM_MODULES=""
 
@@ -112,8 +112,8 @@ echo "[assemble] 转换为 qcow2 ..."
 qemu-img convert -f raw -O qcow2 "$WORK/rootfs.ext4" "$WORK/${DISTRO}-rootfs.qcow2"
 
 # ---------- 5. 输出 ----------
-# alpine 变体的三件套（vmlinuz-virt + 注入 ext4 的 initrd）与 rootfs。
-# custom 变体的内核资产（vmlinuz-router-<ver> / initramfs-empty.gz）由
+# virt 变体的三件套（vmlinuz-virt + 注入 ext4 的 initrd）与 rootfs。
+# router 变体的内核资产（vmlinuz-router / initramfs-empty.gz）由
 # kernel/build.sh 产在 kernel/out/，CI 在 release 作业里一并上传——不在此
 # 复制，避免两个发行版的并行装配作业重复产出同一份内核。
 cp "$WORK/vmlinuz-virt" "$WORK/initrd" "$WORK/${DISTRO}-rootfs.qcow2" "$OUT_DIR/"

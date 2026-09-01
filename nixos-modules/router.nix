@@ -48,27 +48,28 @@ let
   # 携带双方的 /lib/modules/<内核版本串>，目录名不同故互不干扰，由启动内核的
   # uname -r 决定命中哪一份（见 image/assemble-rootfs.sh）。
   #
-  #   alpine  官方 virt 三件套。ext4/virtio_blk 是 =m，必须靠注入了 ext4 依赖链
-  #           的 initrd 才能挂上根盘。稳、有 Alpine 的安全回补。
-  #   custom  本仓库 kernel/build.sh 自建（跟最新 LTS）。引导链全 builtin，
-  #           4.0M vs 12M，不需要 initramfs——但 microvm.nix 的五个 runner 都把
-  #           --initramfs 放在无条件参数里且 initrdPath 是 types.path 无 null
-  #           分支（main 与当前 pin 零差异），声明侧无法不传，故给一个 50 字节
-  #           的空 cpio 占位：内核找不到 /init 会打印 "rdinit=/init failed: -2,
-  #           ignoring" 后正常走 root=/dev/vda（CH v53 实测）。
-  #           代价：CVE 响应从 Alpine 转到本仓库，靠 LTS bump 跟进。
+  #   virt    Alpine 官方 linux-virt 包（vmlinuz-virt）。ext4/virtio_blk 是 =m，
+  #           必须靠注入了 ext4 依赖链的 initrd 才能挂上根盘。稳、有 Alpine 的
+  #           安全回补。
+  #   router  本仓库 kernel/build.sh 自建（跟最新 LTS），资产名 vmlinuz-router。
+  #           引导链全 builtin，4.0M vs 12M，不需要 initramfs——但 microvm.nix 的
+  #           五个 runner 都把 --initramfs 放在无条件参数里且 initrdPath 是
+  #           types.path 无 null 分支（main 与当前 pin 零差异），声明侧无法不传，
+  #           故给一个 50 字节的空 cpio 占位：内核找不到 /init 会打印
+  #           "rdinit=/init failed: -2, ignoring" 后正常走 root=/dev/vda
+  #           （CH v53 实测）。代价：CVE 响应从 Alpine 转到本仓库，靠 LTS bump 跟进。
   #
-  # 资产名不带内核版本：custom 只有一个变体，release tag 已承担版本区分，
+  # 资产名不带内核版本：router 只有一个变体，release tag 已承担版本区分，
   # 故 LTS bump 只改 sha256（sync-flake-sha.py 自动完成），无需手改 url。
   # 内核与 rootfs 由同一 release tag 一起发布，同批次绑定、不解耦。
   kernelVariants = {
-    alpine = {
+    virt = {
       kernel = { url = "${releaseBase}/vmlinuz-virt";
                  sha256 = "1e6bf9027720c75c3ed0d79171f21b5791ee40ca9795d07c7c6e04dc5ea2ae90"; };
       initrd = { url = "${releaseBase}/initrd";
                  sha256 = "f407d5023c2a94ad449f199d9776b7e586d50627ae6ca90aafb1ef48dcfc11ef"; };
     };
-    custom = {
+    router = {
       kernel = { url = "${releaseBase}/vmlinuz-router";
                  sha256 = "49b1449ac78d9b72f3425299e2da70fa7bf43c06c4434938835e4c087b6e5503"; };
       initrd = { url = "${releaseBase}/initramfs-empty.gz";
@@ -111,15 +112,15 @@ in
     };
 
     kernel = lib.mkOption {
-      type = lib.types.enum [ "alpine" "custom" ];
-      default = "alpine";
+      type = lib.types.enum [ "virt" "router" ];
+      default = "virt";
       description = ''
         客户机内核变体（rootfs 与本选项无关，同一 rootfs 同时携带两者的
         /lib/modules/<版本串>）：
 
-        - `alpine`：官方 vmlinuz-virt + 注入 ext4 依赖链的 initrd。12M 内核 +
-          10.3M initrd，享 Alpine 的安全回补。默认值。
-        - `custom`：本仓库自建（跟最新 LTS），引导链全 builtin。4.0M 内核 +
+        - `virt`：Alpine 官方 linux-virt 包（vmlinuz-virt + 注入 ext4 依赖链
+          的 initrd）。12M 内核 + 10.3M initrd，享 Alpine 的安全回补。默认值。
+        - `router`：本仓库自建（跟最新 LTS），引导链全 builtin。4.0M 内核 +
           50 字节空 initramfs 占位（microvm.nix 的 runner 无条件传
           --initramfs，声明侧无法不传）。CVE 响应转由本仓库的 LTS bump 负责。
       '';
@@ -131,8 +132,8 @@ in
       defaultText = lib.literalExpression "按 `kernel` 变体从 release 拉取";
       description = ''
         客户机内核（本仓库 release asset，按 `kernel` 变体选择）。
-        本地调试可覆盖：alpine 变体用 image/assemble.sh 产物的 vmlinuz-virt，
-        custom 变体用 kernel/build.sh 产物的 vmlinuz-router-<版本串>。
+        本地调试可覆盖：virt 变体用 image/assemble.sh 产物的 vmlinuz-virt，
+        router 变体用 kernel/build.sh 产物的 vmlinuz-router。
       '';
     };
 
@@ -141,8 +142,8 @@ in
       default = pkgs.fetchurl variant.initrd;
       defaultText = lib.literalExpression "按 `kernel` 变体从 release 拉取";
       description = ''
-        initramfs（按 `kernel` 变体选择）：alpine 变体是注入了 ext4 依赖链的
-        initrd（挂根必需）；custom 变体是 50 字节空 cpio 占位（全 builtin 不
+        initramfs（按 `kernel` 变体选择）：virt 变体是注入了 ext4 依赖链的
+        initrd（挂根必需）；router 变体是 50 字节空 cpio 占位（全 builtin 不
         需要 initramfs，但 microvm.nix 的 runner 无条件传 --initramfs）。
       '';
     };
@@ -155,8 +156,8 @@ in
       };
       description = ''
         VM 根磁盘 qcow2（本仓库 release asset，按 `os` 参数选择发行版）。
-        内含 rootfs + modloop 模块闭包（alpine 变体用）+ 自建内核的模块
-        元数据（custom 变体用）——与 `kernel` 选项无关，两者共用同一 rootfs。
+        内含 rootfs + modloop 模块闭包（virt 变体用）+ 自建内核的模块
+        元数据（router 变体用）——与 `kernel` 选项无关，两者共用同一 rootfs。
       '';
     };
 

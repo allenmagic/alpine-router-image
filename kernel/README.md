@@ -1,7 +1,7 @@
 # 自建客户机内核
 
 路由 VM 专用内核（x86_64 / cloud-hypervisor guest），对应 `router.nix` 的
-`microvm.router.kernel = "custom"`。官方 Alpine virt 三件套对应 `"alpine"`，
+`microvm.router.kernel = "router"`。官方 Alpine virt 三件套对应 `"virt"`，
 两者并存、可随时切回。
 
 ## 为什么自建
@@ -19,7 +19,7 @@ NF_TABLES=m  NF_CONNTRACK=m  TUN=m  TCP_CONG_BBR=m  NET_SCH_FQ=m
 闭包覆盖不到，只能整目录兜底拷 `kernel/net` = 7.0M / 376 个 `.ko`），以及内核
 与 modloop 的精确版本耦合。
 
-全 builtin 之后这些统统不需要（但 `alpine` 变体仍依赖它们，故代码不能删）：
+全 builtin 之后这些统统不需要（但 `virt` 变体仍依赖它们，故代码不能删）：
 
 | | Alpine `linux-virt` | 自建 |
 |---|---|---|
@@ -43,11 +43,11 @@ JOBS=8 ./kernel/build.sh           # 覆盖并行度
 本地测试（`--assert` 会把启动日志变成断言）：
 
 ```bash
-test/smoke-test.sh alpine --kernel custom --assert              # 用 release 的自建内核
-test/smoke-test.sh alpine --kernel custom --no-initrd --assert  # 连空占位也不传
+test/smoke-test.sh alpine --kernel router --assert              # 用 release 的自建内核
+test/smoke-test.sh alpine --kernel router --no-initrd --assert  # 连空占位也不传
 ```
 
-`--kernel` 取变体名（`alpine` | `custom`）而非路径，从 release 下载并校验
+`--kernel` 取变体名（`virt` | `router`）而非路径，从 release 下载并校验
 sha256 —— 与 `router.nix` 的 `microvm.router.kernel` 同名同义，测的就是消费端
 实际会拿到的东西。测本地刚构建、尚未发布的 `kernel/out/vmlinuz-router` 目前
 没有直通口子，后续另做。

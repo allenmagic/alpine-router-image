@@ -13,17 +13,17 @@
 #   test/smoke-test.sh gentoo --backend cloud-hypervisor
 #
 #   # 用 release 里的自建内核（全 builtin）测同一批 rootfs
-#   test/smoke-test.sh alpine --kernel custom
-#   test/smoke-test.sh alpine --kernel custom --no-initrd   # 连空占位也不传
+#   test/smoke-test.sh alpine --kernel router
+#   test/smoke-test.sh alpine --kernel router --no-initrd   # 连空占位也不传
 #
 # 选项:
 #   --tag TAG         release tag（默认自动探测 GitHub 最新）
 #   --backend NAME    qemu | cloud-hypervisor（默认 qemu）
-#   --kernel VARIANT  alpine | custom（默认 alpine），对应 router.nix 的
+#   --kernel VARIANT  virt | router（默认 virt），对应 router.nix 的
 #                     microvm.router.kernel。两者都从同一 release 下载并校验：
-#                       alpine → vmlinuz-virt   + initrd（10.3M，注入 ext4 依赖链）
-#                       custom → vmlinuz-router + initramfs-empty.gz（50 字节占位）
-#   --no-initrd       不传 initrd。custom 变体全 builtin，占位 initramfs 只为满足
+#                       virt   → vmlinuz-virt   + initrd（10.3M，注入 ext4 依赖链）
+#                       router → vmlinuz-router + initramfs-empty.gz（50 字节占位）
+#   --no-initrd       不传 initrd。router 变体全 builtin，占位 initramfs 只为满足
 #                     microvm.nix 的无条件 --initramfs；本地可直接省掉它
 #   --assert          tee 启动日志并断言：FATAL: Module / Function not
 #                     implemented / hwclock: / Kernel panic 一律视为失败
@@ -57,8 +57,8 @@ LOGLEVEL=""      # 空 = 不追加 loglevel；如 --loglevel 3
 PROXY_MODE="auto"   # auto | on | off（下载是否走 proxychains）
 PROXY=""            # 实际前缀命令（resolve 后，空 = 直连）
 DISTRO=""
-KERNEL="alpine"     # --kernel：内核变体 alpine | custom（都从 release 取）
-USE_INITRD=1        # --no-initrd：置 0（custom 全 builtin，占位 initramfs 可省）
+KERNEL="virt"       # --kernel：内核变体 virt | router（都从 release 取）
+USE_INITRD=1        # --no-initrd：置 0（router 全 builtin，占位 initramfs 可省）
 ASSERT=0            # --assert：tee 启动日志并断言（无 FATAL/ENOSYS/panic 等）
 
 usage() {
@@ -82,7 +82,7 @@ while [ $# -gt 0 ]; do
         --force-download) FORCE_DOWNLOAD=1; shift ;;
         --verify-only) VERIFY_ONLY=1; shift ;;
         --loglevel)    LOGLEVEL="${2:?--loglevel 需要值(0-7)}"; shift 2 ;;
-        --kernel)      KERNEL="${2:?--kernel 需要值(alpine|custom)}"; shift 2 ;;
+        --kernel)      KERNEL="${2:?--kernel 需要值(virt|router)}"; shift 2 ;;
         --no-initrd)   USE_INITRD=0; shift ;;
         --assert)      ASSERT=1; shift ;;
         --proxy)       PROXY_MODE="on"; shift ;;
@@ -103,9 +103,9 @@ esac
 # 一一对应，改那边要同步改这里（资产名不带版本号，故 LTS point release bump
 # 不影响本表）。
 case "$KERNEL" in
-    alpine) KERNEL_ASSET="vmlinuz-virt";   INITRD_ASSET="initrd" ;;
-    custom) KERNEL_ASSET="vmlinuz-router"; INITRD_ASSET="initramfs-empty.gz" ;;
-    *) die "未知内核变体: $KERNEL（支持 alpine | custom）" ;;
+    virt)   KERNEL_ASSET="vmlinuz-virt";   INITRD_ASSET="initrd" ;;
+    router) KERNEL_ASSET="vmlinuz-router"; INITRD_ASSET="initramfs-empty.gz" ;;
+    *) die "未知内核变体: $KERNEL（支持 virt | router）" ;;
 esac
 
 mkdir -p "$ASSETS_DIR"
