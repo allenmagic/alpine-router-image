@@ -27,7 +27,7 @@ let
 
   # 本仓库 CI release（升级时同步改 tag 与 sha256，由 CI 的
   # sync-flake-sha.py 按 release 的 SHA256SUMS 条目自动更新）
-  imageRelease = "microvm-router-vm-20260830";
+  imageRelease = "microvm-router-vm-20260901";
   releaseBase = "https://github.com/allenmagic/microvm-router-image/releases/download/${imageRelease}";
 
   # rootfs 资产表（按发行版；vmlinuz-virt/initrd 是发行版无关的共享资产）。
@@ -36,7 +36,7 @@ let
   osAssets = {
     alpine = {
       url = "${releaseBase}/alpine-rootfs.qcow2";
-      sha256 = "3414f2bb01af52eb7469231c93d3c75c0a94ce27fed9c6fe81ec6ac77fa83358";
+      sha256 = "3c97bd7c84b4d2caa64dce2ff26aa8684b54f88efee3a20fca08cc2e8533a067";
     };
     gentoo = {
       url = "${releaseBase}/gentoo-rootfs.qcow2";
@@ -66,13 +66,13 @@ let
       kernel = { url = "${releaseBase}/vmlinuz-virt";
                  sha256 = "1e6bf9027720c75c3ed0d79171f21b5791ee40ca9795d07c7c6e04dc5ea2ae90"; };
       initrd = { url = "${releaseBase}/initrd";
-                 sha256 = "8126b8df35e8b6162746836aaf22de4b8c6eb054cc9381f7d03cbcd28e1837c1"; };
+                 sha256 = "f407d5023c2a94ad449f199d9776b7e586d50627ae6ca90aafb1ef48dcfc11ef"; };
     };
     custom = {
       kernel = { url = "${releaseBase}/vmlinuz-router";
-                 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"; };
+                 sha256 = "49b1449ac78d9b72f3425299e2da70fa7bf43c06c4434938835e4c087b6e5503"; };
       initrd = { url = "${releaseBase}/initramfs-empty.gz";
-                 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"; };
+                 sha256 = "45193580a6c80dd81135d63ff98daf3339332847f3343a228b9ab1d270e320da"; };
     };
   };
 
