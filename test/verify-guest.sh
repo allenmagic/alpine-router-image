@@ -10,7 +10,7 @@
 # 用法（smoke-test 启动后登录 root/root，粘贴到串口）：
 #   sh /root/verify-guest.sh
 # 或从宿主：
-#   test/smoke-test.sh alpine --kernel router
+#   test/smoke-test.sh alpine --kernel custom
 #   # 登录后手工执行本脚本内容
 #
 # 退出码 0 = 全通过；非 0 = 失败项数

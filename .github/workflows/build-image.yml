@@ -7,12 +7,12 @@ name: microvm-router-build
 # 作业顺序：kernel → build（fan-in 内核的模块元数据）→ release
 #
 # 产物（tag: microvm-router-vm-YYYYMMDD）：
-#   <distro>-rootfs.qcow2        VM 根磁盘。同时携带 modloop 模块闭包（virt
-#                                变体用）与自建内核的模块元数据（router 变体用），
+#   <distro>-rootfs.qcow2        VM 根磁盘。同时携带 modloop 模块闭包（alpine
+#                                变体用）与自建内核的模块元数据（custom 变体用），
 #                                两者目录名为各自内核版本串，互不干扰
-#   vmlinuz-virt / initrd        virt 变体：官方内核 + 注入 ext4 依赖链的 initrd
-#   vmlinuz-router               router 变体：自建内核（4.0M，引导链全 builtin）
-#   initramfs-empty.cpio         router 变体：512 字节未压缩空 cpio 占位（microvm.nix
+#   vmlinuz-virt / initrd        alpine 变体：官方内核 + 注入 ext4 依赖链的 initrd
+#   vmlinuz-router               custom 变体：自建内核（4.0M，引导链全 builtin）
+#   initramfs-empty.cpio         custom 变体：512 字节未压缩空 cpio 占位（microvm.nix
 #                                的 runner 无条件传 --initramfs，声明侧无法不传）
 #   config-router                自建内核的 .config（供查阅与复现，消费端不 fetch）
 #   SHA256SUMS                   消费端 fetchurl 的 sha256 来源（多发行版条目）

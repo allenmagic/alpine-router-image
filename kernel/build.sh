@@ -2,8 +2,8 @@
 # ============================================================
 # 路由 VM 专用内核构建（x86_64 / cloud-hypervisor guest）
 #
-# 本内核对应 router.nix 的 `microvm.router.kernel = "router"`；官方三件套
-# 对应 "virt"。两者并存，rootfs 同时携带双方的 /lib/modules/<ver>（目录名
+# 本内核对应 router.nix 的 `microvm.router.kernel = "custom"`；官方三件套
+# 对应 "alpine"。两者并存，rootfs 同时携带双方的 /lib/modules/<ver>（目录名
 # 不同故互不干扰），由启动内核的 uname -r 决定命中哪一份。
 #
 # 相对 Alpine 官方 virt 三件套的差异：
