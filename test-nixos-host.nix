@@ -7,17 +7,28 @@
 #   ./result/bin/run-*-vm
 #
 # 这会启动一个完整的 NixOS VM（宿主），其中运行着 alpine-router（嵌套 VM）。
-{ config, pkgs, lib, ... }:
+{ config, pkgs, lib, modulesPath, ... }:
 
 {
   imports = [
     # 导入 router 模块
     ./nixos-modules/router.nix
+    # 导入 VM 基础配置（提供 fileSystems 等必需选项）
+    "${modulesPath}/virtualisation/qemu-vm.nix"
   ];
 
   # 基础 NixOS 配置
   system.stateVersion = "26.05";
   networking.hostName = "nixos-test-host";
+
+  # 文件系统（VM 需要）
+  fileSystems."/" = {
+    device = "/dev/vda";
+    fsType = "ext4";
+  };
+
+  # 启动加载器（VM 需要）
+  boot.loader.grub.device = "/dev/vda";
 
   # 启用 router VM
   microvm.router = {
@@ -37,6 +48,7 @@
   };
 
   # 创建测试用的网络桥接
+  networking.useNetworkd = true;  # 使用 systemd-networkd 管理网络
   systemd.network = {
     enable = true;
     netdevs = {
@@ -73,13 +85,11 @@
   documentation.enable = false;
   documentation.nixos.enable = false;
 
-  # VM 测试需要
-  virtualisation.vmVariant = {
-    virtualisation = {
-      memorySize = 4096;  # 宿主 VM 需要足够内存来运行嵌套 microVM
-      cores = 4;
-      graphics = false;
-    };
+  # VM 配置
+  virtualisation = {
+    memorySize = 4096;  # 宿主 VM 需要足够内存来运行嵌套 microVM
+    cores = 4;
+    graphics = false;
   };
 
   # 添加测试工具
