@@ -1,6 +1,6 @@
-# Alpine Router 部署目录
+# Microvm Router 部署目录
 
-本目录是 Alpine 路由 VM 的**密钥注入器**（deploy 资产）。
+本目录是 Microvm Router VM 的**密钥注入器**（deploy 资产）。
 
 **职责边界**：VM 的全部配置（nftables/dnsmasq/sysctl/服务脚本/网络参数）已由
 [microvm-router-image](https://github.com/allenmagic/microvm-router-image) 仓库的 CI

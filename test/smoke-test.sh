@@ -12,9 +12,18 @@
 #   test/smoke-test.sh alpine --verify-only     # 只下载+校验，不启动
 #   test/smoke-test.sh gentoo --backend cloud-hypervisor
 #
+#   # 用 kernel/build.sh 产出的自建内核测 release rootfs（全 builtin，无需 initrd）
+#   test/smoke-test.sh alpine --kernel kernel/out/vmlinuz-router --no-initrd
+#
 # 选项:
 #   --tag TAG         release tag（默认自动探测 GitHub 最新）
 #   --backend NAME    qemu | cloud-hypervisor（默认 qemu）
+#   --kernel PATH     用本地内核替代 release 的 vmlinuz-virt（不下载/不校验它）
+#   --no-initrd       不传 initrd（自建内核 ext4/virtio 全 builtin 时用）
+#   --assert          tee 启动日志并断言：FATAL: Module / Function not
+#                     implemented / hwclock: / Kernel panic 一律视为失败
+#                     （内核能启动 ≠ 能力完整；openrc 的 modules 服务结构上
+#                     无法失败，日志是唯一能拦住静默丢失的地方）
 #   --assets-dir DIR  资产缓存目录（默认 <仓库>/build/smoke-assets，已被 .gitignore 忽略）
 #   --no-download     跳过下载，只用缓存里已有的文件
 #   --force-download  无条件重新下载（默认已会按 sha256 自动刷新过期缓存）
@@ -43,6 +52,9 @@ LOGLEVEL=""      # 空 = 不追加 loglevel；如 --loglevel 3
 PROXY_MODE="auto"   # auto | on | off（下载是否走 proxychains）
 PROXY=""            # 实际前缀命令（resolve 后，空 = 直连）
 DISTRO=""
+KERNEL=""           # --kernel：本地内核路径（空 = 用 release 的 vmlinuz-virt）
+USE_INITRD=1        # --no-initrd：置 0（自建内核全 builtin，不需要 initramfs）
+ASSERT=0            # --assert：tee 启动日志并断言（无 FATAL/ENOSYS/panic 等）
 
 usage() {
     sed -n '2,/^# =====/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -65,6 +77,9 @@ while [ $# -gt 0 ]; do
         --force-download) FORCE_DOWNLOAD=1; shift ;;
         --verify-only) VERIFY_ONLY=1; shift ;;
         --loglevel)    LOGLEVEL="${2:?--loglevel 需要值(0-7)}"; shift 2 ;;
+        --kernel)      KERNEL="${2:?--kernel 需要值}"; shift 2 ;;
+        --no-initrd)   USE_INITRD=0; shift ;;
+        --assert)      ASSERT=1; shift ;;
         --proxy)       PROXY_MODE="on"; shift ;;
         --no-proxy)    PROXY_MODE="off"; shift ;;
         alpine|gentoo|all) DISTRO="$1"; shift ;;
@@ -78,6 +93,16 @@ case "$BACKEND" in
     qemu|cloud-hypervisor) ;;
     *) die "未知后端: $BACKEND（支持 qemu | cloud-hypervisor）" ;;
 esac
+
+# --kernel：本地内核不参与 release 的下载/校验流程，只做存在性检查。
+# 相对路径按仓库根解析，便于 `test/smoke-test.sh ... --kernel kernel/out/...`
+if [ -n "$KERNEL" ]; then
+    case "$KERNEL" in
+        /*) ;;
+        *) KERNEL="${REPO_ROOT}/${KERNEL}" ;;
+    esac
+    [ -f "$KERNEL" ] || die "内核不存在: $KERNEL（先跑 kernel/build.sh）"
+fi
 
 mkdir -p "$ASSETS_DIR"
 
@@ -146,20 +171,33 @@ _is_current() {
     awk -v n="$f" -v h="$h" '$2==n && $1==h {found=1} END{exit !found}' "$SUMS"
 }
 
+# 本次真正要用到的 release 资产。--kernel 自带内核、--no-initrd 不要 initramfs，
+# 这两种情况下对应资产既不下载也不校验（缺失也不该报错）。
+_asset_list() {
+    local distro="$1"
+    [ -n "$KERNEL" ]      || printf 'vmlinuz-virt\n'
+    [ "$USE_INITRD" = 0 ] || printf 'initrd\n'
+    printf '%s-rootfs.qcow2\n' "$distro"
+}
+
 verify() {
     local distro="$1"
     # 始终拉最新 SHA256SUMS，确保校验针对最新 release（而非缓存里的旧 sums）
     fetch "$BASE/SHA256SUMS" "$SUMS"
 
     local f
-    for f in vmlinuz-virt initrd "${distro}-rootfs.qcow2"; do
+    while read -r f; do
         [ -f "${ASSETS_DIR}/${f}" ] || die "缺失 ${ASSETS_DIR}/${f}（去掉 --no-download 或先下载）"
         if _is_current "$f"; then
             log "  ✓ ${f}"
         else
             die "  ✗ ${f}: 校验失败（sha256 不在 release SHA256SUMS 中）"
         fi
-    done
+    done < <(_asset_list "$distro")
+
+    [ -n "$KERNEL" ] && log "  ~ 内核用本地文件（不校验）: ${KERNEL#$REPO_ROOT/}"
+    [ "$USE_INITRD" = 0 ] && log "  ~ 不使用 initrd（内核需 ext4/virtio 全 builtin）"
+    return 0
 }
 
 download() {
@@ -168,7 +206,7 @@ download() {
     fetch "$BASE/SHA256SUMS" "$SUMS"
 
     local f
-    for f in vmlinuz-virt initrd "${distro}-rootfs.qcow2"; do
+    while read -r f; do
         if [ "$FORCE_DOWNLOAD" = 1 ]; then
             fetch "$BASE/$f" "${ASSETS_DIR}/${f}"
         elif _is_current "$f"; then
@@ -177,20 +215,79 @@ download() {
             [ -f "${ASSETS_DIR}/${f}" ] && log "缓存过期 ${f}，重新下载"
             fetch "$BASE/$f" "${ASSETS_DIR}/${f}"
         fi
-    done
+    done < <(_asset_list "$distro")
 }
 
 # ------------------------------------------------------------
 # 启动（前台，串口直连）
 # ------------------------------------------------------------
+# 内核与 initrd 的实际取值（--kernel / --no-initrd 的落点）
+_kernel_path() { printf '%s' "${KERNEL:-${ASSETS_DIR}/vmlinuz-virt}"; }
+
+# ------------------------------------------------------------
+# 启动日志断言
+# ------------------------------------------------------------
+# 为什么需要：内核能编译、能启动、服务全 [ ok ]，仍可能静默丢失能力。
+# 实测踩过三次，全部因为 allnoconfig 把带 prompt 的符号一律置 n（即使
+# Kconfig 写着 default y），而 verify-config.py 只能校验声明过的项：
+#   FILE_LOCKING 丢 → openrc 启动时 flock 全部 "Function not implemented"
+#   SECCOMP 丢     → sshd 每次连接的 privsep 子进程被自己的沙箱打死
+#   RTC_INTF_DEV 丢 → 驱动已绑定但 /dev/rtc0 不存在，hwclock 失败
+# 更麻烦的是 openrc 的 modules 服务用 `modprobe -q` 且在 while 管道里丢弃
+# 返回码——它结构上无法失败，九个模块全 FATAL 也照样打印 [ ok ]。
+# 所以唯一能拦住这类问题的地方是启动日志本身。
+_assert_log() {
+    local log_file="$1" distro="$2" fails=0
+    # ANSI 转义会打断 grep 的模式匹配
+    local plain; plain="$(mktemp)"
+    sed 's/\x1b\[[0-9;]*[a-zA-Z]//g' "$log_file" > "$plain"
+
+    _expect_absent() {
+        local pat="$1" why="$2" n
+        n="$(grep -ac "$pat" "$plain" || true)"
+        if [ "$n" -gt 0 ]; then
+            log "  ✗ 出现 ${n} 次「${pat}」—— ${why}"
+            grep -a "$pat" "$plain" | head -3 | sed 's/^/      /' >&2
+            fails=$((fails + 1))
+        else
+            log "  ✓ 无「${pat}」"
+        fi
+    }
+
+    log "启动日志断言（${distro}）..."
+    # 注：openrc 的 modules 服务用 `modprobe -q`，-q 会完全吞掉
+    # "FATAL: Module xxx not found" —— 启动期九次失败在日志里一个字都没有，
+    # 只有 "Loading modules [ ok ]"。所以模块元数据缺失**无法从启动日志检出**，
+    # 只能靠 test/verify-guest.sh 在 guest 内查 /lib/modules/$(uname -r)。
+    # 这里保留该模式仅为捕获非 -q 调用方（如手工 modprobe、其他服务）的失败。
+    _expect_absent 'FATAL: Module'          '有模块名解析失败（非 -q 调用方）'
+    _expect_absent 'Function not implemented' '内核缺 syscall（如 CONFIG_FILE_LOCKING 未开）'
+    _expect_absent 'hwclock:'                'RTC 不可用（缺 RTC_CLASS/RTC_DRV_CMOS/RTC_INTF_DEV）'
+    _expect_absent 'Kernel panic'            '内核 panic'
+    _expect_absent 'Unable to mount root'    '根盘挂载失败（virtio_blk/ext4 未 builtin 且无 initrd）'
+
+    # 正向断言：必须真的走完启动
+    if grep -aq 'login:' "$plain"; then
+        log "  ✓ 到达登录提示"
+    else
+        log "  ✗ 未到达登录提示（启动未完成）"
+        fails=$((fails + 1))
+    fi
+
+    rm -f "$plain"
+    [ "$fails" -eq 0 ] || return 1
+}
+
 boot_qemu() {
     local distro="$1"
     command -v qemu-system-x86_64 >/dev/null 2>&1 || \
         die "未找到 qemu-system-x86_64（Arch: sudo pacman -S qemu-base）"
+    local initrd_args=()
+    [ "$USE_INITRD" = 1 ] && initrd_args=(-initrd "${ASSETS_DIR}/initrd")
     log "qemu 启动 ${distro}（串口直连 ttyS0；退出按 Ctrl-A 然后 X）"
     qemu-system-x86_64 -m 512 -smp 2 \
-        -kernel "${ASSETS_DIR}/vmlinuz-virt" \
-        -initrd "${ASSETS_DIR}/initrd" \
+        -kernel "$(_kernel_path)" \
+        "${initrd_args[@]}" \
         -append "$KCMD" \
         -snapshot \
         -drive "file=${ASSETS_DIR}/${distro}-rootfs.qcow2,format=qcow2,if=virtio" \
@@ -210,10 +307,12 @@ boot_ch() {
     local scratch; scratch="$(mktemp --suffix=.qcow2)" || die "创建临时镜像失败"
     log "复制镜像到临时文件（避免污染缓存）..."
     cp "$img" "$scratch"
+    local initramfs_args=()
+    [ "$USE_INITRD" = 1 ] && initramfs_args=(--initramfs "${ASSETS_DIR}/initrd")
     log "cloud-hypervisor 启动 ${distro}（纯 boot 冒烟，未接 tap；Ctrl+C 退出）"
     sudo "$ch" \
-        --kernel "${ASSETS_DIR}/vmlinuz-virt" \
-        --initramfs "${ASSETS_DIR}/initrd" \
+        --kernel "$(_kernel_path)" \
+        "${initramfs_args[@]}" \
         --cmdline "$KCMD" \
         --disk "path=$scratch" \
         --cpus boot=2 \
@@ -241,15 +340,36 @@ main() {
     [ "$VERIFY_ONLY" = 1 ] && { log "校验全部通过，跳过启动。"; exit 0; }
 
     # 阶段二：逐个启动
+    local assert_fails=0
     for d in $distros; do
         log "========== 启动 ${d}（登录 root/root；验证 rc-status、nft list ruleset）=========="
         set +e
-        "boot_${BACKEND}" "$d"
-        local rc=$?
+        if [ "$ASSERT" = 1 ]; then
+            # tee 留一份日志供断言；串口仍直连终端，交互不受影响
+            local blog="${ASSETS_DIR}/boot-${d}.log"
+            "boot_${BACKEND}" "$d" 2>&1 | tee "$blog"
+            local rc=${PIPESTATUS[0]}
+        else
+            "boot_${BACKEND}" "$d"
+            local rc=$?
+        fi
         set -e
         log "${d} 退出（rc=$rc）"
         [ "$rc" -eq 0 ] || log "提示: rc=$rc 可能是 qemu Ctrl-A X / CH Ctrl+C 的正常退出，非镜像问题。"
+
+        if [ "$ASSERT" = 1 ]; then
+            set +e
+            _assert_log "$blog" "$d"
+            local arc=$?
+            set -e
+            [ "$arc" -eq 0 ] || assert_fails=$((assert_fails + 1))
+            log "启动日志: ${blog#$REPO_ROOT/}"
+        fi
     done
+
+    if [ "$assert_fails" -gt 0 ]; then
+        die "${assert_fails} 个发行版的启动日志断言未通过"
+    fi
 }
 
 main "$@"

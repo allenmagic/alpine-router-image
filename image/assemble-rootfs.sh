@@ -9,6 +9,7 @@ ROOTFS_TARBALL="$1"
 MODLOOP="$2"
 OUT_EXT4="$3"
 NFT_CHECK_DIR="${4:-}"   # 可选：把 nftables 文件复制到此目录供宿主侧语法验证
+CUSTOM_MODULES="${5:-}"  # 可选：kernel/out/modules（自建内核的模块元数据树）
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -83,6 +84,30 @@ rm -rf rootfs/lib/firmware 2>/dev/null || true
 depmod -b rootfs "$MV"
 
 echo "[assemble-rootfs] 模块精简：$(wc -l < "$DONE") 个（含依赖闭包）"
+
+# ============================================================
+# 自建内核（router.nix 的 kernel = "custom"）的模块元数据
+# ============================================================
+# 与上面的 modloop 闭包并存：目录名是内核版本串（modloop 为 6.18.x-0-virt，
+# 自建为 6.18.x），彼此不同故互不干扰，由启动内核的 uname -r 决定命中哪份。
+# 自建内核 0 个 .ko（引导链全 builtin），这里只有 depmod 元数据 ~108K，其中
+# modules.builtin.bin 让 modprobe 对 builtin 项返回成功。
+# 缺它的后果实测过：/etc/modules 与 modules-load.d 里那 9 项全部失败
+#   modprobe: FATAL: Module nf_tables not found in directory /lib/modules/<ver>
+# 而 openrc 的 modules 服务用 `modprobe -q`（-q 完全吞掉这条错误消息）且在
+# while 管道里丢弃返回码，于是启动日志里只有 "Loading modules [ ok ]"，
+# 一个字的错误都没有——启动日志检不出来，只能靠 test/verify-guest.sh 在
+# guest 内查 /lib/modules/$(uname -r) 与逐项 modprobe。
+if [ -n "$CUSTOM_MODULES" ] && [ -d "$CUSTOM_MODULES/lib/modules" ]; then
+    for _src in "$CUSTOM_MODULES"/lib/modules/*/; do
+        [ -d "$_src" ] || continue
+        _ver="$(basename "$_src")"
+        [ "$_ver" = "$MV" ] && continue      # 与 modloop 同名则跳过（不覆盖）
+        mkdir -p "rootfs/lib/modules/$_ver"
+        cp -a "$_src." "rootfs/lib/modules/$_ver/"
+        echo "[assemble-rootfs] 自建内核元数据: $_ver（$(du -sh "rootfs/lib/modules/$_ver" | cut -f1)，0 个 .ko）"
+    done
+fi
 
 # ============================================================
 # 引导期自动加载：r3s 的 modules 服务注册在 default runlevel，

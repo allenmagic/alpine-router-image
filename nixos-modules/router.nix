@@ -44,9 +44,45 @@ let
     };
   };
 
+  # 内核变体表（`kernel` 选项选择）。两种变体的 rootfs 是同一个——rootfs 同时
+  # 携带双方的 /lib/modules/<内核版本串>，目录名不同故互不干扰，由启动内核的
+  # uname -r 决定命中哪一份（见 image/assemble-rootfs.sh）。
+  #
+  #   alpine  官方 virt 三件套。ext4/virtio_blk 是 =m，必须靠注入了 ext4 依赖链
+  #           的 initrd 才能挂上根盘。稳、有 Alpine 的安全回补。
+  #   custom  本仓库 kernel/build.sh 自建（跟最新 LTS）。引导链全 builtin，
+  #           4.0M vs 12M，不需要 initramfs——但 microvm.nix 的五个 runner 都把
+  #           --initramfs 放在无条件参数里且 initrdPath 是 types.path 无 null
+  #           分支（main 与当前 pin 零差异），声明侧无法不传，故给一个 50 字节
+  #           的空 cpio 占位：内核找不到 /init 会打印 "rdinit=/init failed: -2,
+  #           ignoring" 后正常走 root=/dev/vda（CH v53 实测）。
+  #           代价：CVE 响应从 Alpine 转到本仓库，靠 LTS bump 跟进。
+  #
+  # 资产名不带内核版本：custom 只有一个变体，release tag 已承担版本区分，
+  # 故 LTS bump 只改 sha256（sync-flake-sha.py 自动完成），无需手改 url。
+  # 内核与 rootfs 由同一 release tag 一起发布，同批次绑定、不解耦。
+  kernelVariants = {
+    alpine = {
+      kernel = { url = "${releaseBase}/vmlinuz-virt";
+                 sha256 = "1e6bf9027720c75c3ed0d79171f21b5791ee40ca9795d07c7c6e04dc5ea2ae90"; };
+      initrd = { url = "${releaseBase}/initrd";
+                 sha256 = "8126b8df35e8b6162746836aaf22de4b8c6eb054cc9381f7d03cbcd28e1837c1"; };
+    };
+    custom = {
+      kernel = { url = "${releaseBase}/vmlinuz-router";
+                 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"; };
+      initrd = { url = "${releaseBase}/initramfs-empty.gz";
+                 sha256 = "0000000000000000000000000000000000000000000000000000000000000000"; };
+    };
+  };
+
+  variant = kernelVariants.${cfg.kernel};
+
   # 客户机内核包装：CH runner（x86_64 分支）取 ${kernel.dev}/vmlinux——
-  # 内容实为 bzImage（官方 vmlinuz-virt），CH 按文件头自动识别加载
-  alpineKernel = pkgs.runCommand "vmlinuz-virt" { outputs = [ "out" "dev" ]; } ''
+  # 两种变体的内核文件都是 bzImage，CH 按文件头自动识别加载，故此处对
+  # alpine/custom 一视同仁。（将来若切 PVH，把真 ELF 放进 $dev/vmlinux 即可，
+  # runner 侧零改动；vmlinux 本就是 bzImage 的前置产物，build.sh 有产但不发布）
+  guestKernel = pkgs.runCommand "router-kernel-${cfg.kernel}" { outputs = [ "out" "dev" ]; } ''
     mkdir -p $out $dev
     cp ${cfg.kernelFile} $out/bzImage
     cp ${cfg.kernelFile} $dev/vmlinux
@@ -68,32 +104,46 @@ in
       type = lib.types.enum [ "alpine" "gentoo" ];
       default = "alpine";
       description = ''
-        rootfs 发行版（选择对应的 rootfs asset；vmlinuz-virt/initrd 为
-        发行版无关的共享资产）。gentoo 为 musl-openrc 变体（首次构建
+        rootfs 发行版（选择对应的 rootfs asset；内核资产与发行版无关，
+        由 `kernel` 选项独立选择）。gentoo 为 musl-openrc 变体（首次构建
         未出 release 前选择它会在 fetchurl 处失败并显示真实 sha256）。
+      '';
+    };
+
+    kernel = lib.mkOption {
+      type = lib.types.enum [ "alpine" "custom" ];
+      default = "alpine";
+      description = ''
+        客户机内核变体（rootfs 与本选项无关，同一 rootfs 同时携带两者的
+        /lib/modules/<版本串>）：
+
+        - `alpine`：官方 vmlinuz-virt + 注入 ext4 依赖链的 initrd。12M 内核 +
+          10.3M initrd，享 Alpine 的安全回补。默认值。
+        - `custom`：本仓库自建（跟最新 LTS），引导链全 builtin。4.0M 内核 +
+          50 字节空 initramfs 占位（microvm.nix 的 runner 无条件传
+          --initramfs，声明侧无法不传）。CVE 响应转由本仓库的 LTS bump 负责。
       '';
     };
 
     kernelFile = lib.mkOption {
       type = lib.types.path;
-      default = pkgs.fetchurl {
-        url = "${releaseBase}/vmlinuz-virt";
-        sha256 = "1e6bf9027720c75c3ed0d79171f21b5791ee40ca9795d07c7c6e04dc5ea2ae90";
-      };
+      default = pkgs.fetchurl variant.kernel;
+      defaultText = lib.literalExpression "按 `kernel` 变体从 release 拉取";
       description = ''
-        Alpine 官方 vmlinuz-virt（本仓库 release asset）。
-        本地调试可用 image/assemble.sh 产物的 vmlinuz-virt 覆盖。
+        客户机内核（本仓库 release asset，按 `kernel` 变体选择）。
+        本地调试可覆盖：alpine 变体用 image/assemble.sh 产物的 vmlinuz-virt，
+        custom 变体用 kernel/build.sh 产物的 vmlinuz-router-<版本串>。
       '';
     };
 
     initrd = lib.mkOption {
       type = lib.types.path;
-      default = pkgs.fetchurl {
-        url = "${releaseBase}/initrd";
-        sha256 = "8126b8df35e8b6162746836aaf22de4b8c6eb054cc9381f7d03cbcd28e1837c1";
-      };
+      default = pkgs.fetchurl variant.initrd;
+      defaultText = lib.literalExpression "按 `kernel` 变体从 release 拉取";
       description = ''
-        装配后的 initramfs（已注入 ext4 依赖链，本仓库 release asset）。
+        initramfs（按 `kernel` 变体选择）：alpine 变体是注入了 ext4 依赖链的
+        initrd（挂根必需）；custom 变体是 50 字节空 cpio 占位（全 builtin 不
+        需要 initramfs，但 microvm.nix 的 runner 无条件传 --initramfs）。
       '';
     };
 
@@ -104,8 +154,9 @@ in
         sha256 = osAssets.${cfg.os}.sha256;
       };
       description = ''
-        VM 根磁盘 qcow2（rootfs + modloop 模块，本仓库 release asset；
-        按 `os` 参数选择发行版）。
+        VM 根磁盘 qcow2（本仓库 release asset，按 `os` 参数选择发行版）。
+        内含 rootfs + modloop 模块闭包（alpine 变体用）+ 自建内核的模块
+        元数据（custom 变体用）——与 `kernel` 选项无关，两者共用同一 rootfs。
       '';
     };
 
@@ -277,10 +328,11 @@ in
         # （Alpine 默认只监听 TCP），此处先占 CID 供将来扩展
         microvm.vsock.cid = 3;
 
-        # 客户机内核 / initramfs（官方 virt 三件套，装配时注入 ext4 依赖链）
-        microvm.kernel = alpineKernel;
+        # 客户机内核 / initramfs（按 kernel 变体，见上方 kernelVariants）
+        microvm.kernel = guestKernel;
         microvm.initrdPath = "${cfg.initrd}";
-        # rootfstype=ext4：initramfs 的 "Loading boot drivers" 会据此 modprobe ext4
+        # rootfstype=ext4：alpine 变体的 initramfs 据此 modprobe ext4；
+        # custom 变体 ext4 已 builtin，该参数只是省掉文件系统探测
         microvm.kernelParams = [ "root=/dev/vda" "rootfstype=ext4" "rw" ];
 
         microvm.volumes = [{

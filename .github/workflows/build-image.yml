@@ -1,13 +1,24 @@
 name: microvm-router-build
 
-# 手动触发：按发行版矩阵并行构建 rootfs（musl-openrc 双发行版链）
-# + 装配可启动 VM 镜像（Alpine 官方 virt 三件套，发行版无关共享）
+# 手动触发：构建自建内核（与发行版无关，独立作业）+ 按发行版矩阵并行构建
+# rootfs（musl-openrc 双发行版链）+ 装配可启动 VM 镜像
 # → 汇总上传 release asset，并自动同步 flake 模块的 tag+sha256。
 #
+# 作业顺序：kernel → build（fan-in 内核的模块元数据）→ release
+#
 # 产物（tag: microvm-router-vm-YYYYMMDD）：
-#   <distro>-rootfs.qcow2        VM 根磁盘（ext4 内含 rootfs + modloop 模块）
-#   vmlinuz-virt / initrd        客户机内核与 initramfs（注入 ext4 依赖链，共享）
+#   <distro>-rootfs.qcow2        VM 根磁盘。同时携带 modloop 模块闭包（alpine
+#                                变体用）与自建内核的模块元数据（custom 变体用），
+#                                两者目录名为各自内核版本串，互不干扰
+#   vmlinuz-virt / initrd        alpine 变体：官方内核 + 注入 ext4 依赖链的 initrd
+#   vmlinuz-router               custom 变体：自建内核（4.0M，引导链全 builtin）
+#   initramfs-empty.gz           custom 变体：50 字节空 cpio 占位（microvm.nix 的
+#                                runner 无条件传 --initramfs，声明侧无法不传）
+#   config-router                自建内核的 .config（供查阅与复现，消费端不 fetch）
 #   SHA256SUMS                   消费端 fetchurl 的 sha256 来源（多发行版条目）
+#
+# 内核与 rootfs 由同一 tag 一起发布、同批次绑定：内核 bump 必然重建配套 rootfs
+# （元数据目录名随 uname -r 变化），故二者不解耦。
 #
 # 注：不使用 CI secrets 注入密钥——密钥由 NAS 宿主的 alpine-router-deploy
 # 在部署时注入，绝不进入公开 release 产物。
@@ -49,8 +60,52 @@ jobs:
           INCLUDE="${INCLUDE%,}]"
           echo "matrix={\"include\":${INCLUDE}}" >> "$GITHUB_OUTPUT"
 
+  # 自建内核（router.nix 的 kernel = "custom"）。与发行版无关，故独立成一个
+  # 作业而不进 distro 矩阵——否则 alpine/gentoo 会各编一遍同样的内核。
+  # 产物被下面的 build 作业 fan-in（注入 rootfs 的模块元数据）并进 release。
+  kernel:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install kernel build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc make bc bison flex libelf-dev libssl-dev perl \
+            xz-utils curl ca-certificates cpio gzip kmod
+
+      # 缓存键含 KVER 与 config.fragment 的哈希：版本或配置一变即失效重编，
+      # 否则会拿旧 .config 编出与片段不符的内核（静默丢能力）
+      - name: Resolve cache key
+        id: k
+        run: |
+          KVER="$(grep -oP '^KVER="\$\{KVER:-\K[^}]+' kernel/build.sh)"
+          echo "kver=$KVER" >> "$GITHUB_OUTPUT"
+          echo "frag=$(sha256sum kernel/config.fragment | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache kernel source + build tree
+        uses: actions/cache@v4
+        with:
+          path: kernel/.cache
+          key: kernel-${{ steps.k.outputs.kver }}-${{ steps.k.outputs.frag }}
+
+      - name: Build kernel
+        run: |
+          set -euo pipefail
+          chmod +x kernel/build.sh
+          ./kernel/build.sh
+
+      - name: Upload kernel artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: kernel-${{ github.run_id }}
+          path: kernel/out/*
+          if-no-files-found: error
+          retention-days: 7
+
   build:
-    needs: prepare
+    needs: [ prepare, kernel ]
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false   # 单一发行版失败不影响其他发行版
@@ -65,6 +120,14 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             xz-utils file curl ca-certificates wget \
             cpio gzip squashfs-tools kmod e2fsprogs qemu-utils fakeroot nftables
+
+      # 自建内核的模块元数据（~112K）要注入 rootfs，assemble.sh 默认从
+      # kernel/out/modules 取。内核资产本身由 release 作业直接上传，不经此处。
+      - name: Fetch kernel artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: kernel-${{ github.run_id }}
+          path: kernel/out
 
       - name: Build rootfs (${{ matrix.distro }} / base / x86_64)
         env:
@@ -101,7 +164,9 @@ jobs:
           retention-days: 7
 
   release:
-    needs: build
+    # 显式含 kernel：本作业直接 download kernel artifact（虽然 build 已依赖它，
+    # 传递依赖不体现在 needs.*.result 里，写出来才能表达真实的资产来源）
+    needs: [ build, kernel ]
     if: ${{ always() && contains(needs.build.result, 'success') }}
     runs-on: ubuntu-24.04
     steps:
@@ -114,9 +179,21 @@ jobs:
           merge-multiple: true
           pattern: vm-image-*-${{ github.run_id }}
 
+      # 自建内核资产（custom 变体）。放在独立目录再挑文件进 dist：内核 artifact
+      # 里还有 modules/ 元数据树（已注入 rootfs，不单独发布）与 vmlinux-router
+      # （当前 CH 走 bzImage 路径不消费它，是将来切 PVH 的后路，不发布）。
+      - name: Download kernel artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: kernel-${{ github.run_id }}
+          path: kout
+
       - name: Merge SHA256SUMS
         run: |
-          sort -k2 dist/SHA256SUMS.* > dist/SHA256SUMS
+          set -euo pipefail
+          cp kout/vmlinuz-router kout/initramfs-empty.gz kout/config-router dist/
+          # 内核的 SHA256SUMS 只覆盖它自己的三个产物，与发行版的条目一起排序合并
+          sort -k2 dist/SHA256SUMS.* kout/SHA256SUMS > dist/SHA256SUMS
           rm dist/SHA256SUMS.*
           echo "=== 汇总资产 ==="
           ls -la dist/
@@ -135,6 +212,9 @@ jobs:
           files: |
             dist/vmlinuz-virt
             dist/initrd
+            dist/vmlinuz-router
+            dist/initramfs-empty.gz
+            dist/config-router
             dist/*-rootfs.qcow2
             dist/SHA256SUMS
           draft: false

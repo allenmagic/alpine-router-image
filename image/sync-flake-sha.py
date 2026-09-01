@@ -17,6 +17,11 @@ for line in open(sha_file):
     if len(parts) == 2:
         shas[parts[1]] = parts[0]
 
+# release 里有但消费端不 fetch 的资产：不该产生「缺对应行」的警告，否则真正
+# 需要补行的新发行版会被噪声淹没。config-router 是自建内核的 .config，供人工
+# 查阅与复现构建（版本串、开了哪些符号），router.nix 不引用它。
+NOT_FETCHED = {"config-router"}
+
 s = open(nix_file).read()
 
 # 更新 tag（幂等：同日重跑值不变）
@@ -32,7 +37,10 @@ for asset, sha in sorted(shas.items()):
     )
     s, n = pattern.subn(r"\g<1>" + sha + r"\g<2>", s, count=1)
     if n == 0:
-        print(f"⚠️ SHA256SUMS 有 {asset}，但 router.nix 无对应资产行（新发行版需在 osAssets 补行）")
+        if asset in NOT_FETCHED:
+            print(f"跳过 {asset}（消费端不 fetch，仅供人工查阅）")
+        else:
+            print(f"⚠️ SHA256SUMS 有 {asset}，但 router.nix 无对应资产行（新发行版需在 osAssets 补行）")
     else:
         updated += 1
         print(f"已同步 {asset}: {sha[:12]}...")

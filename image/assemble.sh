@@ -30,6 +30,13 @@ ROOTFS_TARBALL="$(readlink -f "${1:?用法: assemble.sh <rootfs-tarball> [output
 OUT_DIR="$(readlink -f "${2:-dist}")"
 DISTRO="${3:-alpine}"   # rootfs 发行版（决定 rootfs asset 命名；三件套共享）
 
+# 自建内核（router.nix 的 kernel = "custom"）的模块元数据树。存在则注入 rootfs，
+# 与 modloop 闭包并存（目录名为各自的内核版本串，互不干扰）。缺省取
+# kernel/out/modules——CI 里由独立的 kernel 作业产出后 fan-in 到此。
+# 不存在时静默跳过：只出 alpine 变体的镜像仍然完整可用。
+CUSTOM_MODULES="${CUSTOM_MODULES:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/kernel/out/modules}"
+[ -d "$CUSTOM_MODULES/lib/modules" ] || CUSTOM_MODULES=""
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p "$OUT_DIR"
 WORK="$(mktemp -d)"
@@ -65,10 +72,10 @@ depmod -b "$WORK/initrd-x" "$MV"
 # ---------- 3. rootfs 装配 ----------
 echo "[assemble] rootfs：注入 modloop 模块 + 装配 ext4 ..."
 if [ "$(id -u)" -eq 0 ]; then
-    bash "$SCRIPT_DIR/assemble-rootfs.sh" "$ROOTFS_TARBALL" "$WORK/modloop-virt" "$WORK/rootfs.ext4" "$WORK/nft-check"
+    bash "$SCRIPT_DIR/assemble-rootfs.sh" "$ROOTFS_TARBALL" "$WORK/modloop-virt" "$WORK/rootfs.ext4" "$WORK/nft-check" "$CUSTOM_MODULES"
 else
     command -v fakeroot >/dev/null 2>&1 || { echo "[assemble] 非 root 环境需要 fakeroot" >&2; exit 1; }
-    fakeroot -- bash "$SCRIPT_DIR/assemble-rootfs.sh" "$ROOTFS_TARBALL" "$WORK/modloop-virt" "$WORK/rootfs.ext4" "$WORK/nft-check"
+    fakeroot -- bash "$SCRIPT_DIR/assemble-rootfs.sh" "$ROOTFS_TARBALL" "$WORK/modloop-virt" "$WORK/rootfs.ext4" "$WORK/nft-check" "$CUSTOM_MODULES"
 fi
 
 # ---------- 3.5 nftables 语法验证（宿主侧；fakeroot 会拦截 nft 的 netlink 调用） ----------
@@ -105,6 +112,10 @@ echo "[assemble] 转换为 qcow2 ..."
 qemu-img convert -f raw -O qcow2 "$WORK/rootfs.ext4" "$WORK/${DISTRO}-rootfs.qcow2"
 
 # ---------- 5. 输出 ----------
+# alpine 变体的三件套（vmlinuz-virt + 注入 ext4 的 initrd）与 rootfs。
+# custom 变体的内核资产（vmlinuz-router-<ver> / initramfs-empty.gz）由
+# kernel/build.sh 产在 kernel/out/，CI 在 release 作业里一并上传——不在此
+# 复制，避免两个发行版的并行装配作业重复产出同一份内核。
 cp "$WORK/vmlinuz-virt" "$WORK/initrd" "$WORK/${DISTRO}-rootfs.qcow2" "$OUT_DIR/"
 (cd "$OUT_DIR" && sha256sum vmlinuz-virt initrd "${DISTRO}-rootfs.qcow2" > SHA256SUMS)
 echo "[assemble] 完成："
