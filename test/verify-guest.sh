@@ -64,6 +64,19 @@ else
 fi
 rm -f /tmp/.vg.lock
 
+head_ "回环接口（dnsmasq 本地查询、本地 ssh 等一切连 127.0.0.1 的东西都要它）"
+# 注意别把「设备存在」当成「已启用」：lo 这个 netdev 内核无条件创建，ip a 永远
+# 列得出来，DOWN 时的样子是 <LOOPBACK> + qdisc noop 且一条地址都没有
+if ip link show lo 2>/dev/null | grep -q '[<,]UP[,>]'; then
+    ok "lo 已 up"
+    ip addr show lo 2>/dev/null | grep -q 'inet 127\.0\.0\.1' \
+        && ok "lo 有 127.0.0.1" || bad "lo 已 up 但没有 127.0.0.1"
+    ping -c1 -W1 127.0.0.1 >/dev/null 2>&1 \
+        && ok "127.0.0.1 可达" || bad "lo 已 up 但 127.0.0.1 不可达"
+else
+    bad "lo 处于 DOWN —— loopback 服务未注册进 boot runlevel"
+fi
+
 head_ "服务状态"
 CRASHED="$(rc-status --crashed 2>/dev/null)"
 [ -z "$CRASHED" ] && ok "无崩溃服务" || bad "崩溃服务: $CRASHED"

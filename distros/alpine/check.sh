@@ -53,6 +53,10 @@ check_rootfs() {
         fi
     }
     echo "[check] openrc 服务:"
+    # loopback：Alpine 默认不注册它，漏了 lo 就一直 DOWN，且启动日志里没有任何
+    # 迹象（服务没跑，自然不报错），只能在构建期查注册状态
+    _check_openrc loopback boot
+    _check_openrc network
     _check_openrc sshd
     _check_openrc chronyd
     _check_openrc nftables

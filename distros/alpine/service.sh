@@ -9,6 +9,13 @@ enable_router_services() {
 
     # --- 系统基础服务 ---
     _enable_service bootmisc boot
+    # 回环：Alpine 的 openrc 带 loopback 服务但默认不注册（Gentoo 的 stage3 已在
+    # boot runlevel 注册，故只有这边缺）。放 boot 而非 default，是为了在 default
+    # 里任何服务起来之前 lo 就已就绪，不留竞态。
+    # 不注册的后果：lo 一直是 <LOOPBACK> DOWN 且无地址（内核只在 up 时才自动配
+    # 127.0.0.1/8 与 ::1），任何连 127.0.0.1 的东西都不通 —— 实测 dnsmasq 本地
+    # 查询失败，本地 ssh 同理。而且启动日志里没有任何迹象：服务没跑，自然不报错。
+    _enable_service loopback boot
     _enable_service syslog
     _enable_service crond
 

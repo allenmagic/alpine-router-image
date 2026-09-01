@@ -19,6 +19,9 @@ start() {
     ebegin "Configuring network (${WAN_IFACE} dhcp, ${LAN_IFACE} static)"
     local rc=0
 
+    # 回环由发行版自带的 loopback 服务在 boot runlevel 处理（见各 distro 的
+    # service.sh），本服务只管 WAN/LAN。
+
     # LAN 静态 IP（keepalived 的 VRRP 浮动 IP 会叠加在此接口上）
     ip link set "${LAN_IFACE}" up || rc=1
     ip addr replace "${LAN_IP}/${LAN_CIDR}" dev "${LAN_IFACE}" || rc=1
