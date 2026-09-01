@@ -15,9 +15,9 @@
 # 需要时挂载的伪文件系统列表（按挂载顺序）
 # 说明：不单独挂 dev/pts —— /dev 已整体 --bind（含 pts），
 #       在 WSL 等环境单独 bind /dev/pts 常失败且多余。
-# shm 单独挂 tmpfs：bind /dev 不包含子挂载点，而 Gentoo 等构建
+# dev/shm 单独挂 tmpfs：bind /dev 不包含子挂载点，而 Gentoo 等构建
 # （python 的 sem_open 检测）需要 /dev/shm 为 mode=1777 的 tmpfs
-_CHROOT_VFS="dev proc sys run shm"
+_CHROOT_VFS="dev proc sys run dev/shm"
 
 # 状态文件：记录某个 rootfs 实际挂载了哪些点（供逆序卸载）
 _chroot_state_file() {
@@ -45,12 +45,12 @@ chroot_enter() {
             continue
         fi
         case "$vfs" in
-            dev)   src="/dev";  opts="--bind"  ;;
-            proc)  src="proc";  opts="-t proc" ;;
-            sys)   src="/sys";  opts="--bind"  ;;
-            run)   src="/run";  opts="--bind"  ;;
-            shm)   src="shm";   opts="-t tmpfs" ;;
-            *)     src="";      opts="--bind"  ;;
+            dev)       src="/dev";  opts="--bind"   ;;
+            proc)      src="proc";  opts="-t proc"  ;;
+            sys)       src="/sys";  opts="--bind"   ;;
+            run)       src="/run";  opts="--bind"   ;;
+            dev/shm)   src="shm";   opts="-t tmpfs" ;;
+            *)         src="";      opts="--bind"   ;;
         esac
 
         # —— 关键：挂载失败仅警告并跳过，绝不让 set -e 中止整脚本 ——
@@ -114,7 +114,7 @@ chroot_exit() {
     else
         # 兜底：无状态文件时按已知列表逆序卸载
         local vfs
-        for vfs in shm run sys proc dev; do
+        for vfs in dev/shm run sys proc dev; do
             umount -l "$rootfs/$vfs" 2>/dev/null || umount -R "$rootfs/$vfs" 2>/dev/null || true
         done
     fi
