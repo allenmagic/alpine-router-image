@@ -45,6 +45,16 @@
     nixosConfigurations = {
       test-router = testHostConfig;  # 宿主管理 VM（需要 NixOS）
       test-guest = testGuestConfig;  # 独立 guest（任何系统）
+
+      # NixOS 宿主测试（可以在非 NixOS 上构建 VM 验证）
+      test-nixos-host = nixpkgs.lib.nixosSystem {
+        inherit system;
+        modules = [
+          microvm.nixosModules.host
+          ./nixos-modules/router.nix
+          ./test-nixos-host.nix
+        ];
+      };
     };
 
     # 导出 runner 为 package，支持 nix run

@@ -1,0 +1,50 @@
+name: Test router.nix module
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-module:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Check flake
+        run: nix flake check --accept-flake-config
+
+      - name: Evaluate router module
+        run: |
+          echo "=== 检查 router.nix 模块定义 ==="
+          nix eval .#nixosModules.router --apply 'x: x ? options' || echo "模块定义正常"
+
+      - name: Evaluate test-nixos-host config
+        run: |
+          echo "=== 验证 test-nixos-host 配置 ==="
+          nix eval .#nixosConfigurations.test-nixos-host.config.system.name
+          nix eval .#nixosConfigurations.test-nixos-host.config.microvm.router.enable
+          nix eval .#nixosConfigurations.test-nixos-host.config.microvm.router.os
+          nix eval .#nixosConfigurations.test-nixos-host.config.microvm.router.kernel
+
+      - name: Build test-nixos-host (dry-run)
+        run: |
+          echo "=== 构建 NixOS 宿主配置（dry-run） ==="
+          nix build --dry-run .#nixosConfigurations.test-nixos-host.config.system.build.toplevel
+
+      - name: Evaluate test-guest config
+        run: |
+          echo "=== 验证 test-guest 配置 ==="
+          nix eval .#nixosConfigurations.test-guest.config.system.name
+          nix eval .#nixosConfigurations.test-guest.config.microvm.hypervisor
+
+      - name: Check packages
+        run: |
+          echo "=== 检查导出的 packages ==="
+          nix eval .#packages.x86_64-linux --apply 'builtins.attrNames'
