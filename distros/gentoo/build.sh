@@ -111,8 +111,16 @@ if [ ! -f "${TARBALL}" ]; then
     wget -qO "${TARBALL}.DIGESTS" "${MIRROR}/${FILENAME}.DIGESTS" 2>/dev/null || true
     if [ -f "${TARBALL}.DIGESTS" ]; then
         echo "[gentoo]   校验 SHA512 ..."
-        if ! (cd "${CACHE_DIR}" && grep -A1 SHA512 "${TARBALL}.DIGESTS" | grep "${BASENAME}" | sha512sum -c - 2>/dev/null); then
-            echo "[gentoo]   警告：SHA512 校验不匹配，tarball 可能损坏" >&2
+        # 文件名必须锚定行尾：BASENAME 是 ${BASENAME}.CONTENTS.gz 的前缀，不锚定会
+        # 连那一行一起选中，而 .CONTENTS.gz 从不下载，sha512sum 必然
+        # "FAILED open or read" 并返回非 0 —— 于是 tarball 好坏都报同一句警告，
+        # 校验形同虚设。也不再吞 stderr：FAILED（校验和不符）与 FAILED open or
+        # read（文件缺失）是两回事，吞掉就分辨不出来。
+        _SHA_LINE="$(grep -A1 SHA512 "${TARBALL}.DIGESTS" | grep " ${BASENAME}$" || true)"
+        if [ -z "${_SHA_LINE}" ]; then
+            echo "[gentoo]   警告：DIGESTS 中无 ${BASENAME} 的 SHA512 条目，未校验" >&2
+        elif ! (cd "${CACHE_DIR}" && printf '%s\n' "${_SHA_LINE}" | sha512sum -c -); then
+            echo "[gentoo]   警告：SHA512 校验失败，tarball 可能损坏或被篡改" >&2
         fi
     fi
 else
