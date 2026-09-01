@@ -36,11 +36,11 @@ let
   osAssets = {
     alpine = {
       url = "${releaseBase}/alpine-rootfs.qcow2";
-      sha256 = "3c97bd7c84b4d2caa64dce2ff26aa8684b54f88efee3a20fca08cc2e8533a067";
+      sha256 = "ac1d406a1bcd4b9b29c10ad5b76eb48984b24c72a8704f7bb4179311ba847b68";
     };
     gentoo = {
       url = "${releaseBase}/gentoo-rootfs.qcow2";
-      sha256 = "1bd30ea9db75b9d2f7fd5d7823326ceb915de70777ab427585946a18f38a3e38";
+      sha256 = "abec9aa7594168396e5b6aed30b9112c4fe991b9479a3276d8fe97ceadef1aea";
     };
   };
 
@@ -68,7 +68,7 @@ let
       kernel = { url = "${releaseBase}/vmlinuz-virt";
                  sha256 = "1e6bf9027720c75c3ed0d79171f21b5791ee40ca9795d07c7c6e04dc5ea2ae90"; };
       initrd = { url = "${releaseBase}/initrd";
-                 sha256 = "f407d5023c2a94ad449f199d9776b7e586d50627ae6ca90aafb1ef48dcfc11ef"; };
+                 sha256 = "e71da1fe5fa673c1468ccd59ca375ed6603086955d0a09d49044207b17aaf2d3"; };
     };
     router = {
       kernel = { url = "${releaseBase}/vmlinuz-router";
