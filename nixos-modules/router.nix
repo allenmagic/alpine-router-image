@@ -5,7 +5,7 @@
 # 宿主侧升级只需 nix flake update，无手动同步。
 #
 # 用法：
-#   imports = [ inputs.microvm-router-image.nixosModules.router ];
+#   imports = [ inputs.router-image.nixosModules.router ];
 #   microvm.router.enable = true;   # 可选参数覆盖见 options
 #
 # 供应链：
@@ -28,7 +28,7 @@ let
   # 本仓库 CI release（升级时同步改 tag 与 sha256，由 CI 的
   # sync-flake-sha.py 按 release 的 SHA256SUMS 条目自动更新）
   imageRelease = "microvm-router-vm-20260901";
-  releaseBase = "https://github.com/allenmagic/microvm-router-image/releases/download/${imageRelease}";
+  releaseBase = "https://github.com/allenmagic/router-image/releases/download/${imageRelease}";
 
   # rootfs 资产表（按发行版；vmlinuz-virt/initrd 是发行版无关的共享资产）。
   # CI 出 release 时 sync 脚本按 SHA256SUMS 条目自动同步对应 sha256；
