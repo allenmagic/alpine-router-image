@@ -262,9 +262,9 @@ in
           "--api-socket /run/router-vm/api.sock"
         ];
 
-        # 优雅关机：经 api-socket 通知 guest（ACPI shutdown）。guest 侧
-        # 若无响应（如 acpid 缺失），TimeoutStopSec 到期由 systemd 兜底
-        # SIGKILL——guest 无状态（ro rootfs + tmpfs 状态），强杀无害
+        # 关机：经 api-socket shutdown-vmm（实测 CH v52 秒级退出，VMM 级
+        # 关闭，guest 侧无关机流程——无状态 guest 无可冲刷数据，无害）。
+        # 极端情况下挂起时 TimeoutStopSec 到期由 systemd 兜底 SIGKILL
         ExecStop = "${pkgs.cloud-hypervisor}/bin/ch-remote --api-socket /run/router-vm/api.sock shutdown-vmm";
         TimeoutStopSec = 90;
 

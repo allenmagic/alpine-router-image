@@ -1,18 +1,23 @@
 # 在 NixOS 上验证 router.nix 模块
 
-本指南介绍如何验证 `router.nix` 模块在 NixOS 宿主上的完整功能。
+本指南介绍如何验证 `nixos-modules/router.nix`（`services.router-vm.*`）在
+NixOS 宿主上的完整功能。验收标准对应 `docs/refactor-proposal.md` §7。
 
 ## 方案对比
 
 | 方案 | 适用场景 | 复杂度 | 验证完整度 |
 |---|---|---|---|
-| **方案 1：NixOS VM** | 在 Arch Linux 等非 NixOS 上测试 | 中等 | 高（嵌套虚拟化） |
-| **方案 2：GitHub Actions CI** | 自动化测试 | 低 | 中（无 KVM） |
-| **方案 3：真实 NixOS** | 有 NixOS 机器 | 低 | 最高 |
+| **方案 1：NixOS VM** | 在非 NixOS 上测试模块接线 | 中等 | 中（嵌套虚拟化，isolcpus 不生效） |
+| **方案 2：GitHub Actions CI** | 每次提交自动验证配置生成 | 低 | 中（无 KVM，只验证 unit 生成） |
+| **方案 3：真实 NixOS** | 生产部署前最终验证 | 低 | 最高 |
 
-## 方案 1：使用 NixOS VM（推荐）
+> 前置：方案 1/3 的模块 fetchurl 需要 router-vm-* 前缀的 release 已存在
+> （`nixos-modules/router.nix` 的 sha256 由 CI 的 sync-flake-sha.py 自动同步）。
 
-在非 NixOS 系统（如 Arch Linux）上构建一个 NixOS VM，在其中运行 router VM（嵌套虚拟化）。
+## 方案 1：使用 NixOS VM
+
+在非 NixOS 系统（如 Arch Linux）上构建一个 NixOS VM，在其中运行 router VM
+（嵌套虚拟化）。验证模块的 systemd 单元接线与网络挂桥。
 
 ### 前置条件
 
@@ -32,220 +37,143 @@ nix build .#nixosConfigurations.test-nixos-host.config.system.build.vm
 ./result/bin/run-nixos-test-host-vm
 ```
 
-**说明**：
-- 这会启动一个完整的 NixOS 系统（宿主）
-- NixOS 宿主会自动启动 `alpine-router` microVM（通过 systemd）
-- 两层虚拟化：外层是 qemu VM（NixOS 宿主），内层是 cloud-hypervisor VM（alpine-router）
-
 ### 验证步骤
 
 VM 启动后，在宿主 VM 的终端里：
 
 ```bash
-# 1. 检查 microvm 服务状态
-systemctl status microvm@alpine-router.service
+# 1. 检查 router-vm 服务状态（systemd 直管，无 microvm@ 单元）
+systemctl status router-vm
+systemctl status router-vm-deploy   # 每次 VM 启动后的密钥注入
 
-# 2. 检查网络桥接
+# 2. 检查网络桥接与 tap
 ip link show br-wan
 ip link show br-lan
-ip link show router-wan
+ip link show router-wan    # 模块 preStart 创建，networkd 自动挂桥
 ip link show router-lan
 
-# 3. SSH 进入 router VM
+# 3. 串口日志（故障恢复通道）
+router-vm-console
+
+# 4. SSH 进入 router VM（root/root；无密钥时 router-vm-deploy 会失败并
+#    在 journal 中可见——本方案下可先手工验证 ssh 通道）
 ssh root@192.168.10.1
 # 密码：root
 
-# 4. 在 router VM 内验证
-uname -a                    # 查看内核版本
-ip addr                     # 查看网络配置
-nft list ruleset            # 查看 nftables 规则
-ping 8.8.8.8                # 测试外网连通性
+# 5. 在 router VM 内验证
+uname -a                    # 自建内核版本
+ip addr                     # eth0=WAN(DHCP) eth1=192.168.10.1
+nft list ruleset            # nftables 规则
+rc-status                   # 服务矩阵（cloudflared/tailscale 无密钥时 stopped 属正常）
 
-# 5. 退出 router VM
-exit
-
-# 6. 测试部署工具（可选）
-alpine-router-deploy
-```
-
-### 清理
-
-```bash
-# 删除 VM 镜像（位于 ~/.cache/nixos-vm/）
-rm -rf ~/.cache/nixos-vm/
+# 6. 优雅关机
+systemctl stop router-vm    # api-socket shutdown-vmm，CH 秒级退出
+systemctl start router-vm   # 自动恢复（含 router-vm-deploy 重新注入）
 ```
 
 ### 限制
 
-- **嵌套虚拟化性能**：外层 qemu + 内层 cloud-hypervisor，性能比真实 NixOS 差
-- **CPU 隔离无效**：`isolcpus` 在 VM 内不生效（需要宿主内核参数）
+- **CPU 隔离无效**：`isolcpus` 在 VM 内不生效（需要宿主内核参数），
+  affinity pin 本身可验证（`taskset -cp $(pgrep cloud-hypervisor)`）
 - **网络拓扑简化**：测试桥接是虚拟的，没有连接真实物理接口
 
 ## 方案 2：GitHub Actions CI
 
-在 CI 中验证配置解析和服务定义的正确性（无法实际启动 VM，因为 GitHub Actions 不支持 KVM）。
+已实现（`.github/workflows/test-router-module.yml`，push/PR 自动运行）：
 
-### 添加 CI workflow
+- `nix flake check`
+- 模块定义与 `services.router-vm.*` 选项求值
+- `router-vm.service` 的 ExecStart/ExecStop/preStart 与
+  `router-vm-deploy.service` 依赖关系断言
+- tap → 桥的 networkd 配置断言
+- test-nixos-host toplevel dry-run
 
-```yaml
-# .github/workflows/test-router-module.yml
-name: Test router.nix module
+## 方案 3：真实 NixOS 宿主（生产验收）
 
-on: [push, pull_request]
+有 NixOS 机器时做最终验证。完整示例见 `example-host-config.nix`，
+这里只列验收流程。
 
-jobs:
-  test-module:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - uses: cachix/install-nix-action@v27
-        with:
-          extra_nix_config: |
-            experimental-features = nix-command flakes
-      
-      - name: Check flake
-        run: nix flake check
-      
-      - name: Evaluate test-nixos-host config
-        run: |
-          nix eval .#nixosConfigurations.test-nixos-host.config.system.name
-          nix eval .#nixosConfigurations.test-nixos-host.config.microvm.router.enable
-      
-      - name: Build (dry-run)
-        run: |
-          nix build --dry-run .#nixosConfigurations.test-nixos-host.config.system.build.toplevel
-```
-
-**验证范围**：
-- ✅ 配置语法正确
-- ✅ 模块选项定义正确
-- ✅ 依赖关系正确
-- ❌ 无法实际启动 VM（无 /dev/kvm）
-
-## 方案 3：真实 NixOS 宿主
-
-如果你有一台 NixOS 机器（物理机或 VPS），可以直接测试完整功能。
-
-### 配置示例
+### 配置要点
 
 ```nix
-# /etc/nixos/configuration.nix
-{ config, pkgs, ... }:
-
 {
   imports = [
-    # 从本地 checkout 导入（开发测试）
-    /path/to/router-image/nixos-modules/router.nix
-    
-    # 或从 GitHub 导入（生产环境）
-    # (builtins.fetchGit {
-    #   url = "https://github.com/allenmagic/router-image";
-    #   ref = "main";
-    # } + "/nixos-modules/router.nix")
+    (builtins.fetchGit {
+      url = "https://github.com/allenmagic/router-image";
+      ref = "main";
+    } + "/nixos-modules/router.nix")
+    # 或经 flake：inputs.router-image.nixosModules.router
   ];
 
-  microvm.router = {
+  services.router-vm = {
     enable = true;
     os = "alpine";
-    kernel = "alpine";
-
-    cpu = 0;              # 根据你的硬件调整
+    cpu = 2;               # 隔离核：按硬件调整（isolcpus）
     vcpus = 2;
     mem = 512;
     initialBalloonMem = 256;
-
-    # 使用真实的网络接口
-    wanBridge = "br-wan";  # 连接到上游路由器/ISP
-    lanBridge = "br-lan";  # 连接到下游设备
+    wanBridge = "br-wan";
+    lanBridge = "br-lan";
     vmIp = "192.168.10.1";
   };
 
-  # 配置真实的网络桥接
-  systemd.network = {
-    enable = true;
-    netdevs = {
-      "10-br-wan".netdevConfig = {
-        Kind = "bridge";
-        Name = "br-wan";
-      };
-      "10-br-lan".netdevConfig = {
-        Kind = "bridge";
-        Name = "br-lan";
-      };
-    };
-    networks = {
-      # 将物理接口加入桥
-      "20-wan".networkConfig.Bridge = "br-wan";
-      "20-wan".matchConfig.Name = "enp1s0";  # 你的上游接口
-      
-      "20-lan".networkConfig.Bridge = "br-lan";
-      "20-lan".matchConfig.Name = "enp2s0";  # 你的下游接口
-    };
-  };
+  # 桥接：见 example-host-config.nix（tap 由模块创建，物理口挂桥在宿主配置）
 
-  # CPU 隔离（可选，生产推荐）
-  boot.kernelParams = [ "isolcpus=0" "rcu_nocbs=0" ];
+  # 密钥（sops-nix）：解密到 /run/secrets，router-vm-deploy 每次 VM 启动后
+  # 自动注入 guest /run。secrets.yaml 条目名与模块 secretsDir 约定一致：
+  sops.secrets."ssh-public-key" = { sopsFile = ./secrets.yaml; };
+  sops.secrets."tailscale-auth-key" = { sopsFile = ./secrets.yaml; };
+  sops.secrets."cloudflared-token" = { sopsFile = ./secrets.yaml; };
 }
 ```
 
-### 应用配置
+### 验收清单（对应方案 §7）
 
 ```bash
-# 切换到新配置
-sudo nixos-rebuild switch
+# 1. VM 启动、SSH 可达（经 br-lan）
+systemctl status router-vm
+ssh root@192.168.10.1 'uptime'
 
-# 检查服务状态
-systemctl status microvm@alpine-router.service
+# 2. ro rootfs 无写失败报错
+ssh root@192.168.10.1 'dmesg | grep -i "read-only\|ro fs" || echo 无写失败'
+# 亦可查串口日志：grep "Read-only" /run/router-vm/console.log
 
-# 查看日志
-journalctl -u microvm@alpine-router.service -f
+# 3. deploy 注入（sops 密钥经符号链接落 /run）
+ssh root@192.168.10.1 'cat /root/.ssh/authorized_keys; cat /etc/tailscale/authkey'
+# tailscale 登录（手动，authkey 经 config.json file: 机制生效）
+ssh root@192.168.10.1 'tailscale up'
 
-# SSH 进入 router VM
-ssh root@192.168.10.1
+# 4. 镜像升级后状态保留（新架构：状态=密钥，重启即重新注入，无需重新 deploy）
+#    nix flake update → nixos-rebuild switch → 自动重启 VM + 重新 deploy
+ssh root@192.168.10.1 'cat /root/.ssh/authorized_keys'   # 应仍存在
 
-# 部署密钥（可选）
-sudo cp /etc/libvirt/alpine-router.env.example /etc/libvirt/alpine-router.env
-sudo vim /etc/libvirt/alpine-router.env  # 填入真实密钥
-sudo chmod 600 /etc/libvirt/alpine-router.env
-alpine-router-deploy
+# 5. 宿主 reboot 后 VM 自动恢复 + deploy 自动补注入
+sudo reboot
+# 恢复后：
+systemctl status router-vm router-vm-deploy
+
+# 6. 优雅关机（api-socket 生效，CH 进程退出）
+systemctl stop router-vm
+pgrep cloud-hypervisor || echo "CH 已退出"
+
+# 7. 核隔离：只绑定隔离核
+taskset -cp $(pgrep cloud-hypervisor)   # 应只显示 cpu 选项指定的核
+
+# 8. balloon：guest 初始 256M
+ssh root@192.168.10.1 'free -h'         # 初始可用内存 ≈ mem - balloon
+# 宿主 OOM 时收缩由 deflate_on_oom 处理（真实 OOM 场景难以人工构造，
+# 可在宿主上制造内存压力观察 free -h 上升）
+
+# 9. smoke-test：两条路径（见 docs/quick-start-arch-linux.md）
+bash test/smoke-test.sh alpine --verify-only
+bash test/smoke-test.sh alpine --backend cloud-hypervisor --assert
 ```
-
-### 验证完整功能
-
-```bash
-# 1. 检查 VM 是否运行
-systemctl status microvm@alpine-router.service
-
-# 2. 检查网络
-ping 192.168.10.1
-ssh root@192.168.10.1 'ip addr'
-
-# 3. 检查 CPU 隔离
-taskset -cp $(pgrep cloud-hypervisor)  # 应该只显示 CPU 0
-
-# 4. 检查动态内存（balloon）
-ssh root@192.168.10.1 'free -h'
-
-# 5. 下游设备连通性测试
-# 将一台设备连接到 br-lan，配置 IP 192.168.10.x/24
-# 测试能否通过 router VM 访问外网
-```
-
-## 推荐验证流程
-
-1. **开发阶段**：使用 **方案 1（NixOS VM）** 在 Arch Linux 上快速迭代
-2. **集成测试**：添加 **方案 2（GitHub Actions）** 确保每次提交配置正确
-3. **生产部署前**：在 **方案 3（真实 NixOS）** 上做最终验证
 
 ## 常见问题
 
 ### Q1: NixOS VM 构建失败
 ```bash
-# 检查 Nix 配置
 nix doctor
-
-# 清理缓存重试
 nix-collect-garbage -d
 nix build .#nixosConfigurations.test-nixos-host.config.system.build.vm
 ```
@@ -253,36 +181,42 @@ nix build .#nixosConfigurations.test-nixos-host.config.system.build.vm
 ### Q2: 嵌套虚拟化不工作
 检查 CPU 是否支持嵌套虚拟化：
 ```bash
-# Intel
-cat /sys/module/kvm_intel/parameters/nested  # 应该是 Y
-
-# AMD
-cat /sys/module/kvm_amd/parameters/nested    # 应该是 1
-
-# 如果不支持，需要启用（重启后生效）
+cat /sys/module/kvm_intel/parameters/nested  # Intel：Y
+cat /sys/module/kvm_amd/parameters/nested    # AMD：1
+# 不满足时启用（重启生效）：
 echo "options kvm_intel nested=1" | sudo tee /etc/modprobe.d/kvm-nested.conf
 ```
 
-### Q3: microvm 服务启动失败
+### Q3: router-vm 服务启动失败
 ```bash
-# 查看详细日志
-journalctl -u microvm@alpine-router.service -n 50
-
+journalctl -u router-vm -n 50
 # 常见原因：
 # - 桥接未创建：检查 systemd.network 配置
-# - 镜像未准备：检查 alpine-router-disk.service 日志
 # - KVM 权限：检查 /dev/kvm 可读写
+# - release 未出（fetchurl hash mismatch）：先触发 CI 出 router-vm-* release
 ```
 
-### Q4: 如何回滚到 smoke-test.sh？
-如果 NixOS VM 方案太复杂，回退到简单测试：
+### Q4: router-vm-deploy 失败
 ```bash
-# smoke-test.sh 仍然是最快的验证方式
-bash test/smoke-test.sh alpine --kernel custom --assert
+journalctl -u router-vm-deploy -n 50
+# 常见原因：
+# - VM 未上线（4 分钟 ping 超时）：查 router-vm-console 串口日志
+# - 密钥文件缺失：/run/secrets/ 下应有三项（缺项按跳过处理，不报错）
+# - 密码通道被拒：确认镜像含 base/ssh/sshd_config.d/root-login.conf
+#   （root/root 密码 + StrictHostKeyChecking=no 是设计通道）
+```
+
+### Q5: 想绕过 sops 手工部署
+```bash
+# ROUTER_VM_ENV_FILE 指向传统 env 文件（格式见 /etc/router-vm/env.example）
+sudo cp /etc/router-vm/env.example /tmp/router-vm.env
+sudo vim /tmp/router-vm.env   # 填入密钥
+sudo ROUTER_VM_ENV_FILE=/tmp/router-vm.env router-vm-deploy
 ```
 
 ## 下一步
 
-- 完整的生产部署指南：参见 `README.md`
-- 自定义镜像构建：参见 `image/README.md`
-- 自建内核配置：参见 `kernel/README.md`
+- 生产部署：`example-host-config.nix`（网桥 + 模块 + sops 完整示例）
+- 迁移自旧 microvm.router：`docs/migration-from-microvm.md`
+- 自定义镜像构建：`image/` 与 `distros/` 构建链
+- 自建内核配置：`kernel/README.md`
