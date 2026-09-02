@@ -9,7 +9,7 @@
 `test/smoke-test.sh` 已实现完整的下载、校验、启动流程，**无需任何前置配置**：
 
 ```bash
-cd /path/to/microvm-router-image
+cd /path/to/router-image
 
 # 使用 qemu 启动 Alpine rootfs + 官方内核
 bash test/smoke-test.sh alpine
@@ -42,9 +42,9 @@ bash test/smoke-test.sh alpine --kernel custom --assert
 ```nix
 # configuration.nix
 {
-  inputs.microvm-router-image.url = "github:allenmagic/microvm-router-image";
+  inputs.router-image.url = "github:allenmagic/router-image";
 
-  imports = [ inputs.microvm-router-image.nixosModules.router ];
+  imports = [ inputs.router-image.nixosModules.router ];
 
   microvm.router = {
     enable = true;
@@ -193,7 +193,7 @@ bash test/smoke-test.sh alpine --proxy
 # 或手动下载后使用本地缓存
 mkdir -p build/smoke-assets
 cd build/smoke-assets
-curl -LO https://github.com/allenmagic/microvm-router-image/releases/download/microvm-router-vm-20260901/alpine-rootfs.qcow2
+curl -LO https://github.com/allenmagic/router-image/releases/download/microvm-router-vm-20260901/alpine-rootfs.qcow2
 # ... 下载其他资产
 cd ../..
 bash test/smoke-test.sh alpine --no-download

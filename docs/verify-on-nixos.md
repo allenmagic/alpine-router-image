@@ -23,7 +23,7 @@
 ### 构建并启动
 
 ```bash
-cd /path/to/microvm-router-image
+cd /path/to/router-image
 
 # 构建 NixOS VM（首次需要下载 NixOS 依赖，~3-5GB）
 nix build .#nixosConfigurations.test-nixos-host.config.system.build.vm
@@ -136,11 +136,11 @@ jobs:
 {
   imports = [
     # 从本地 checkout 导入（开发测试）
-    /path/to/microvm-router-image/nixos-modules/router.nix
+    /path/to/router-image/nixos-modules/router.nix
     
     # 或从 GitHub 导入（生产环境）
     # (builtins.fetchGit {
-    #   url = "https://github.com/allenmagic/microvm-router-image";
+    #   url = "https://github.com/allenmagic/router-image";
     #   ref = "main";
     # } + "/nixos-modules/router.nix")
   ];

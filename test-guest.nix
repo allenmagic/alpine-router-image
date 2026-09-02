@@ -17,7 +17,7 @@
 let
   # 使用本仓库的 release 资产（与 router.nix 同源）
   imageRelease = "microvm-router-vm-20260901";
-  releaseBase = "https://github.com/allenmagic/microvm-router-image/releases/download/${imageRelease}";
+  releaseBase = "https://github.com/allenmagic/router-image/releases/download/${imageRelease}";
 
   # 预先下载镜像到 /nix/store
   rootfsImage = pkgs.fetchurl {
