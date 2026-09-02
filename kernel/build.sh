@@ -2,19 +2,13 @@
 # ============================================================
 # 路由 VM 专用内核构建（x86_64 / cloud-hypervisor guest）
 #
-# 本内核对应 router.nix 的 `microvm.router.kernel = "custom"`；官方三件套
-# 对应 "alpine"。两者并存，rootfs 同时携带双方的 /lib/modules/<ver>（目录名
-# 不同故互不干扰），由启动内核的 uname -r 决定命中哪一份。
-#
-# 相对 Alpine 官方 virt 三件套的差异：
-#   - 引导链全 builtin（ext4/virtio_blk/virtio_net…）→ 不需要 initramfs 注入
-#     ext4 依赖链；但 microvm.nix 五个 runner 均无条件传 --initramfs（main 与
-#     当前 pin 零差异），故仍产一个空 cpio 占位，内核 rdinit 找不到 /init 后
-#     "ignoring" 继续挂 root=/dev/vda（CH v53 实测）
-#   - 不产 modloop：rootfs 无需为本内核做 unsquashfs + 依赖闭包拷贝
-#   - 同时产出 bzImage 与 vmlinux（ELF）：CH 的 x86_64 分支取
-#     ${kernel.dev}/vmlinux，当前喂 bzImage 由 CH 按文件头识别；vmlinux 是
-#     将来切 PVH 的零成本后路（它本就是 bzImage 的前置产物），故构建但不发布
+# 本内核是路由 VM 的唯一内核（重构后不再有 Alpine 官方 virt 变体）：
+#   - 引导链全 builtin（ext4/virtio_blk/virtio_net…）→ 无需 initramfs，
+#     cloud-hypervisor 直接 --kernel 引导（kernel + rootfs 两件套）
+#   - 不产 modloop：rootfs 无需 unsquashfs + 依赖闭包拷贝
+#   - 同时产出 bzImage 与 vmlinux（ELF）：CH 按文件头识别 bzImage；
+#     vmlinux 是将来切 PVH 的零成本后路（它本就是 bzImage 的前置产物），
+#     故构建但不发布
 #
 # 版本策略：只跟最新 LTS（路由器要的是不断网，而非新特性；LTS 只收 backport
 # 修复，回归面窄）。bump 时同步改 KVER 与 SRC_SHA256，CI 会重建配套 rootfs。
@@ -110,8 +104,8 @@ log "编译（-j$JOBS）..."
 make -C "$SRC_DIR" O="$BUILD_DIR" -j"$JOBS" bzImage vmlinux
 
 # ---------- 4. 产物 ----------
-# 产物名不带版本。custom 只有一个变体（跟最新 LTS），而 release tag
-# （microvm-router-vm-YYYYMMDD）已经承担了版本区分——把内核版本写进资产名
+# 产物名不带版本。内核只有一个变体（跟最新 LTS），而 release tag
+# （router-vm-YYYYMMDD）已经承担了版本区分——把内核版本写进资产名
 # 会让每次 point release bump 都要手改 router.nix 的 url，
 # sync-flake-sha.py 的锚定正则也会失配。版本可从 config-router 内容与
 # guest 的 uname -r 查得，rootfs 里的 /lib/modules/<版本串> 也仍带版本。
@@ -144,25 +138,11 @@ depmod -b "$OUT_DIR/modules" "$KREL" 2>/dev/null
 [ -f "$MODDIR/modules.builtin.bin" ] || die "depmod 未生成 modules.builtin.bin"
 log "模块元数据: $(du -sh "$MODDIR" | cut -f1)（builtin 项 $(wc -l < "$MODDIR/modules.builtin") 个，0 个 .ko）"
 
-# ---------- 6. 空 initramfs 占位 ----------
-# 本内核引导链全 builtin，不需要 initramfs。但 microvm.nix 的五个 runner
-# （cloud-hypervisor/qemu/firecracker/crosvm/stratovirt）都把 --initramfs 放在
-# 无条件参数里，且 initrdPath 是 types.path 无 null 分支——声明侧无法不传。
-# 故产一个空 cpio：内核挂载后找不到 /init，打印
-#   check access for rdinit=/init failed: -2, ignoring
-# 随后正常走 root=/dev/vda（CH v53 本地实测）。这样五个 runner 全部适用，
-# 上游一行不用改；将来上游把 --initramfs 改成条件项后可直接弃用本产物。
-#
-# 未压缩：内核原生支持未压缩 cpio（无需任何 CONFIG_RD_* 解压器），而 gzip 需要
-# CONFIG_RD_GZIP=y 即 zlib 依赖——为解压 50 字节空文件增加内核体积违背 router
-# 变体的精简原则。512 字节 vs 50 字节对传输/存储影响可忽略。
-: | cpio --null -o --format=newc 2>/dev/null > "$OUT_DIR/initramfs-empty.cpio"
-log "空 initramfs: $(stat -c%s "$OUT_DIR/initramfs-empty.cpio") 字节（Alpine initrd 参照: 10.3M）"
-
+# ---------- 6. 校验和 ----------
 # vmlinux 不入 SHA256SUMS：当前 CH 走 bzImage 路径不消费它，它只是将来切 PVH
 # 的后路与宿主侧 gdb/crash 的符号来源，无需作为 release 资产发布
-(cd "$OUT_DIR" && sha256sum vmlinuz-router config-router initramfs-empty.cpio > SHA256SUMS)
+(cd "$OUT_DIR" && sha256sum vmlinuz-router config-router > SHA256SUMS)
 
 log "完成："
 ls -la "$OUT_DIR"
-log "bzImage: $(du -h "$OUT_DIR/vmlinuz-router" | cut -f1)（Alpine vmlinuz-virt 参照: 12M）"
+log "bzImage: $(du -h "$OUT_DIR/vmlinuz-router" | cut -f1)"

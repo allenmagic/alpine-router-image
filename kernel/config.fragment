@@ -67,6 +67,9 @@ CONFIG_PARAVIRT_SPINLOCKS=y
 CONFIG_PVH=y
 # ACPI：CH 的优雅关机（ch-remote power-button / shutdown）依赖它
 CONFIG_ACPI=y
+# X2APIC：CH 的 MADT 用 x2apic 条目声明 vCPU（含 2 核场景）。缺它条目
+# 被整体忽略 → 只认到 1 个 CPU（CH v53 实测 "Allowing 1 present CPUs"）
+CONFIG_X86_X2APIC=y
 
 # ---------- PCI（CH 只有 virtio-pci，无 MMIO 传输） ----------
 CONFIG_PCI=y
@@ -82,6 +85,11 @@ CONFIG_UNIX98_PTYS=y
 CONFIG_SERIAL_8250=y
 CONFIG_SERIAL_8250_CONSOLE=y
 CONFIG_SERIAL_8250_PCI=y
+# PNP：从 ACPI 表拿串口 IRQ。CH 的 DSDT 把 COM1 的 GSI 声明为非常规值，
+# 关掉 PNP 时 8250 驱动回落到「经典 IRQ 4」假设 → 中断永不触发 →
+# 内核 printk（轮询）正常、用户态 tty 写（中断驱动 TX）永久静默
+# （CH v53 + 6.18.48 实测：到 "Run /sbin/init" 后用户态零输出）
+CONFIG_SERIAL_8250_PNP=y
 CONFIG_SERIAL_CORE=y
 CONFIG_SERIAL_CORE_CONSOLE=y
 
@@ -120,7 +128,8 @@ CONFIG_DEVTMPFS=y
 CONFIG_DEVTMPFS_MOUNT=y
 CONFIG_INOTIFY_USER=y
 # BLK_DEV_INITRD：本方案根文件系统直挂 vda、不需要 initramfs，但保留
-# 支持只多几 KB，换来「新内核 + 旧 initrd」的回退路径 —— 迁移可以分步走
+# 支持只多几 KB —— 它是 ro rootfs 写点失控时「builtin initramfs 叠
+# overlay」回退路线（见 docs/refactor-proposal.md §5）的内核侧前提
 CONFIG_BLK_DEV_INITRD=y
 
 # ---------- 网络核心 ----------
