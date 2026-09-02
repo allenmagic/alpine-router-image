@@ -10,6 +10,10 @@ enable_router_services() {
 
     # --- 系统基础服务 ---
     _enable_service bootmisc boot
+    # 运行时状态目录（sysinit：/run 下目录准备，先于一切 default 级服务）
+    _enable_service run-state sysinit
+    # host key 在 /run/ssh 生成（依赖 run-state，先于 sshd）
+    _enable_service sshd-keys sysinit
     _enable_service syslog
     _enable_service crond
 

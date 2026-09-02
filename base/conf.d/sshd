@@ -1,0 +1,8 @@
+# ro rootfs 适配：host key 生成禁用
+#
+# ssh-keygen -A 不解析 sshd_config.d 的 Include drop-in，始终写默认
+# 路径 /etc/ssh/ssh_host_*，且临时文件落在同目录（ro 上必然失败，
+# 实测 "Could not save your private key ... Read-only file system"）。
+# 生成职责移交 base/init/openrc/sshd-keys 服务（在状态盘上生成，
+# HostKey 路径由 base/ssh/sshd_config.d/state-hostkeys.conf 指向状态盘）。
+sshd_disable_keygen="yes"

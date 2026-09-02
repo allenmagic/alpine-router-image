@@ -1,11 +1,18 @@
 #!/bin/sh
 #
-# lib/secrets.sh —— 密钥注入（Tailscale / Cloudflared）
+# lib/secrets.sh —— 密钥注入（SSH / Tailscale / Cloudflared）
 #   被 install.sh source 调用
-#   定义 inject_secrets() 和 tailscale_up()
+#   定义 inject_secrets()
 #
 #   密钥来自环境变量（由 env 文件加载，见 env.example），
 #   绝不写入部署包或日志。
+#   登录类应用（tailscale up）由操作者手动执行：authkey 经 config.json
+#   的 file: 机制被 tailscaled 启动时读取，手动 `tailscale up`
+#   只触发登录、不需要再传 key。
+#
+#   注入路径说明（guest 无状态架构）：/root/.ssh、/etc/cloudflared、
+#   /etc/tailscale/authkey 均为构建期烙入的符号链接 → /run（tmpfs），
+#   写入经链接落盘到 tmpfs，重启即清（重新 deploy 即可恢复）。
 #
 
 inject_secrets() {
@@ -30,7 +37,7 @@ inject_secrets() {
         mkdir -p /etc/tailscale
         printf '%s' "${TAILSCALE_AUTH_KEY}" > /etc/tailscale/authkey
         chmod 600 /etc/tailscale/authkey
-        echo "  → Tailscale authkey 已注入"
+        echo "  → Tailscale authkey 已注入（登录请手动执行: tailscale up）"
     else
         echo "  → 未提供 TAILSCALE_AUTH_KEY，跳过"
     fi
@@ -45,19 +52,5 @@ inject_secrets() {
         echo "  → Cloudflared token 已注入并重启服务"
     else
         echo "  → 未提供 CLOUDFLARED_TOKEN，跳过"
-    fi
-}
-
-tailscale_up() {
-    if [ -f /etc/tailscale/authkey ]; then
-        # 无 authkey 启动时 tailscaled 可能已退出（crashed），
-        # 先确保服务在跑（rc-service start 幂等）再登录
-        echo "[secrets] 确保 tailscaled 运行..."
-        rc-service tailscale start 2>/dev/null || true
-        sleep 1
-        echo "[secrets] Tailscale 登录（authkey）..."
-        tailscale up
-    else
-        echo "[secrets] 未提供 authkey，跳过 Tailscale 登录（可稍后手动 tailscale up）"
     fi
 }

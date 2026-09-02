@@ -1,0 +1,29 @@
+#!/sbin/openrc-run
+# ============================================================
+# sshd-keys —— 在 /run/ssh（tmpfs）生成 SSH host key
+#
+# 替代 sshd init 自带的 keygen（其 -A 模式不解析 sshd_config.d 的
+# Include，固定写 /etc/ssh —— ro rootfs 上无法落盘）。
+# HostKey 读取路径由 base/ssh/sshd_config.d/state-hostkeys.conf
+# 指到 /run/ssh/。key 每次启动重新生成（guest 无状态架构），
+# deploy 通道用 root/root 密码 + StrictHostKeyChecking=no 连接。
+# ============================================================
+
+name=$RC_SVCNAME
+description="Generate SSH host keys under /run/ssh"
+
+depend() {
+    need run-state
+    before sshd
+}
+
+start() {
+    ebegin "Ensuring SSH host keys under /run/ssh"
+    local _t _rc=0
+    for _t in rsa ecdsa ed25519; do
+        if [ ! -f "/run/ssh/ssh_host_${_t}_key" ]; then
+            ssh-keygen -q -t "$_t" -N '' -f "/run/ssh/ssh_host_${_t}_key" || _rc=1
+        fi
+    done
+    eend $_rc
+}

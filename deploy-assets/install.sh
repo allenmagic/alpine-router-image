@@ -2,7 +2,7 @@
 # ============================================================
 # Microvm Router 密钥注入脚本（VM 内以 root 执行）
 #
-# 配置不再经本脚本部署：全部配置已由 microvm-router-image 仓库的
+# 配置不再经本脚本部署：全部配置已由 router-image 仓库的
 # CI 烙进镜像（出厂即正确），本脚本只负责注入密钥类数据。
 #
 # 通常由宿主机 `alpine-router-deploy` 调用：
@@ -32,9 +32,8 @@ trap 'rm -f "${SCRIPT_DIR}/env"' EXIT
 
 echo "[install] 开始密钥注入..."
 
-# ---- 密钥注入 + Tailscale 登录 ----
+# ---- 密钥注入（登录类应用由操作者手动启动，见 README）----
 . "${LIB_DIR}/secrets.sh"
 inject_secrets
-tailscale_up
 
-echo "[install] 完成。"
+echo "[install] 完成。Tailscale 登录请手动执行: ssh root@<VM_IP> 'tailscale up'"
