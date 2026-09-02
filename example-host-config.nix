@@ -16,7 +16,7 @@
 
 {
   imports = [
-    ./nixos-modules/router-vm.nix
+    ./nixos-modules/router.nix
     # 生产环境改用 flake 集成：inputs.router-image.nixosModules.router
   ];
 
