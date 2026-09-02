@@ -6,7 +6,8 @@
 #   nix build .#nixosConfigurations.test-nixos-host.config.system.build.vm
 #   ./result/bin/run-*-vm
 #
-# 这会启动一个完整的 NixOS VM（宿主），其中运行着 alpine-router（嵌套 VM）。
+# 这会启动一个完整的 NixOS VM（宿主），其中运行着 router VM（嵌套 VM）。
+# 端到端验收步骤见 docs/verify-on-nixos.md。
 { config, pkgs, lib, modulesPath, ... }:
 
 {
@@ -31,10 +32,9 @@
   boot.loader.grub.device = "/dev/vda";
 
   # 启用 router VM
-  microvm.router = {
+  services.router-vm = {
     enable = true;
     os = "alpine";
-    kernel = "alpine";
 
     cpu = 0;
     vcpus = 2;
@@ -87,7 +87,7 @@
 
   # VM 配置
   virtualisation = {
-    memorySize = 4096;  # 宿主 VM 需要足够内存来运行嵌套 microVM
+    memorySize = 4096;  # 宿主 VM 需要足够内存来运行嵌套 router VM
     cores = 4;
     graphics = false;
   };

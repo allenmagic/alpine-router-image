@@ -1,4 +1,4 @@
-name: Test router.nix module
+name: Test router module
 
 on:
   push:
@@ -29,22 +29,23 @@ jobs:
         run: |
           echo "=== 验证 test-nixos-host 配置 ==="
           nix eval .#nixosConfigurations.test-nixos-host.config.system.name
-          nix eval .#nixosConfigurations.test-nixos-host.config.microvm.router.enable
-          nix eval .#nixosConfigurations.test-nixos-host.config.microvm.router.os
-          nix eval .#nixosConfigurations.test-nixos-host.config.microvm.router.kernel
+          nix eval .#nixosConfigurations.test-nixos-host.config.services.router-vm.enable
+          nix eval .#nixosConfigurations.test-nixos-host.config.services.router-vm.os
+
+      - name: Evaluate router-vm systemd units
+        run: |
+          echo "=== router-vm.service（ExecStart/ExecStop/preStart）==="
+          nix eval .#nixosConfigurations.test-nixos-host.config.systemd.services.router-vm.serviceConfig.ExecStart
+          nix eval .#nixosConfigurations.test-nixos-host.config.systemd.services.router-vm.serviceConfig.ExecStop
+          nix eval .#nixosConfigurations.test-nixos-host.config.systemd.services.router-vm.preStart
+          echo "=== router-vm-deploy.service（依赖关系）==="
+          nix eval .#nixosConfigurations.test-nixos-host.config.systemd.services.router-vm-deploy.after
+          nix eval .#nixosConfigurations.test-nixos-host.config.systemd.services.router-vm-deploy.partOf
+          echo "=== 网络（tap → 宿主桥）==="
+          nix eval .#nixosConfigurations.test-nixos-host.config.systemd.network.networks \
+            --apply 'builtins.mapAttrs (n: v: { name = v.matchConfig.Name; bridge = v.networkConfig.Bridge; })'
 
       - name: Build test-nixos-host (dry-run)
         run: |
           echo "=== 构建 NixOS 宿主配置（dry-run） ==="
           nix build --dry-run .#nixosConfigurations.test-nixos-host.config.system.build.toplevel
-
-      - name: Evaluate test-guest config
-        run: |
-          echo "=== 验证 test-guest 配置 ==="
-          nix eval .#nixosConfigurations.test-guest.config.system.name
-          nix eval .#nixosConfigurations.test-guest.config.microvm.hypervisor
-
-      - name: Check packages
-        run: |
-          echo "=== 检查导出的 packages ==="
-          nix eval .#packages.x86_64-linux --apply 'builtins.attrNames'

@@ -1,164 +1,141 @@
-# Alpine Router MicroVM 消费端声明模块（POC）
+# Router VM 消费端声明模块（cloud-hypervisor 直管，不依赖 microvm.nix）
 #
-# 由 qnap-nixos-nas 的 microvm/router.nix 迁移而来（2026-08-27）。
-# 镜像生产与消费同仓库：CI 出 release 时同步更新本文件的 tag 与三处 sha256，
-# 宿主侧升级只需 nix flake update，无手动同步。
+# 由旧 microvm.router 模块重写（2026-09-02，方案见 docs/refactor-proposal.md）。
+# 镜像生产与消费同仓库：CI 出 release 时用 image/sync-flake-sha.py 自动同步
+# 本文件的 tag 与各资产 sha256，宿主侧升级只需 nix flake update。
 #
 # 用法：
 #   imports = [ inputs.router-image.nixosModules.router ];
-#   microvm.router.enable = true;   # 可选参数覆盖见 options
+#   services.router-vm = {
+#     enable = true;
+#     cpu = 2;                # 隔离给 VM 独占的宿主核（isolcpus + vcpu0 affinity）
+#     os = "alpine";          # rootfs 发行版（alpine | gentoo）
+#   };
 #
-# 供应链：
-#   - 镜像资产由本仓库 CI 生产（release asset）：vmlinuz-virt / initrd（注入
-#     ext4 依赖链）/ <distro>-rootfs.qcow2，本模块只 fetchurl 拉取
-#   - disk-prep 服务把 release 镜像复制到 /var/lib/alpine-router（可写状态目录；
-#     store 只读无法直接读写打开）——release 升级（store 路径变化）自动重装状态
-#   - 配置：alpine-router-deploy（NAS 侧）是唯一密钥注入通道，配置已烙进镜像
-#
-# 后端与资源（cloud-hypervisor）：
-#   - cpu 核隔离：isolcpus + vcpu0 affinity pin（宿主机不再使用该核）
-#   - 动态内存：virtio-balloon（CH 128M 对齐粒度）+ 宿主 OOM 放气
-#   - 网络：CH 无 qemu 的 bridge 接口类型，用 tap 接口 + systemd-networkd
-#     在 tap 出现时自动加入桥
+# 架构（相对旧 microvm.router 的差异）：
+#   - 不依赖 microvm.nix：systemd 单元直接 ExecStart cloud-hypervisor，
+#     tap 创建/挂桥、balloon、优雅关机全部自管
+#   - 内核唯一：自建 vmlinuz-router（引导链全 builtin，无 initramfs）
+#   - guest 完全无状态：rootfs 只读挂载（--disk readonly=on），持久化密钥
+#     由宿主 sops-nix 管理（解密到 /run/secrets），router-vm-deploy 在每次
+#     VM 启动后 scp 注入 guest 的 /run（tmpfs），重启即清、重新注入
+#   - 状态目录：/var/lib/router-vm/rootfs-<内容哈希>.qcow2 —— rootfs 的只读
+#     副本。镜像升级 → 哈希路径变化 → ExecStart 变化 → systemd 自动重启 VM；
+#     旧副本保留供 rollback 复用，可手动清理
+#   - 串口落盘 /run/router-vm/console.log：网络故障时的恢复通道
+#     （router-vm-console 查看），getty 仍在 guest 的 ttyS0 上
 { config, lib, pkgs, ... }:
 
 let
-  cfg = config.microvm.router;
+  cfg = config.services.router-vm;
 
-  # 本仓库 CI release（升级时同步改 tag 与 sha256，由 CI 的
-  # sync-flake-sha.py 按 release 的 SHA256SUMS 条目自动更新）
-  imageRelease = "microvm-router-vm-20260901";
+  # 本仓库 CI release（sync-flake-sha.py 在每次 release 后自动同步 tag 与
+  # sha256；首次新前缀 release 前 sha256 为占位 0，fetchurl 会失败并显示
+  # 真实值，release 触发后 CI 自动回填）
+  imageRelease = "router-vm-20260901";
   releaseBase = "https://github.com/allenmagic/router-image/releases/download/${imageRelease}";
 
-  # rootfs 资产表（按发行版；vmlinuz-virt/initrd 是发行版无关的共享资产）。
-  # CI 出 release 时 sync 脚本按 SHA256SUMS 条目自动同步对应 sha256；
+  # rootfs 资产表（按发行版；vmlinuz-router 是发行版无关的共享内核资产）。
   # 新发行版构建链就绪后在此加一行即可（SHA256SUMS 会多出对应条目）。
   osAssets = {
     alpine = {
       url = "${releaseBase}/alpine-rootfs.qcow2";
-      sha256 = "f05fc68c4644f452a5ed8dadbd67c68db0c7916c1da08a283aabebf0b76092b7";
+      sha256 = "0000000000000000000000000000000000000000000000000000000000000000";
     };
     gentoo = {
       url = "${releaseBase}/gentoo-rootfs.qcow2";
-      sha256 = "3ad863097b9d60da4ffb4765aac7973692786d100828dc44fc0f9501c4ad6e47";
+      sha256 = "0000000000000000000000000000000000000000000000000000000000000000";
     };
   };
 
-  # 内核变体表（`kernel` 选项选择）。两种变体的 rootfs 是同一个——rootfs 同时
-  # 携带双方的 /lib/modules/<内核版本串>，目录名不同故互不干扰，由启动内核的
-  # uname -r 决定命中哪一份（见 image/assemble-rootfs.sh）。
-  #
-  #   alpine  Alpine 官方 linux-virt 包（vmlinuz-virt）。ext4/virtio_blk 是 =m，
-  #           必须靠注入了 ext4 依赖链的 initrd 才能挂上根盘。稳、有 Alpine 的
-  #           安全回补。
-  #   custom  本仓库 kernel/build.sh 自建（跟最新 LTS），资产名 vmlinuz-router。
-  #           引导链全 builtin，4.0M vs 12M，不需要 initramfs——但 microvm.nix 的
-  #           五个 runner 都把 --initramfs 放在无条件参数里且 initrdPath 是
-  #           types.path 无 null 分支（main 与当前 pin 零差异），声明侧无法不传，
-  #           故给一个 512 字节的空 cpio 占位（未压缩，内核原生支持、无需解压器）：
-  #           内核找不到 /init 会打印 "rdinit=/init failed: -2, ignoring" 后正常走
-  #           root=/dev/vda（CH v53 实测）。代价：CVE 响应从 Alpine 转到本仓库，
-  #           靠 LTS bump 跟进。
-  #
-  # 资产名不带内核版本：custom 只有一个变体，release tag 已承担版本区分，
-  # 故 LTS bump 只改 sha256（sync-flake-sha.py 自动完成），无需手改 url。
-  # 内核与 rootfs 由同一 release tag 一起发布，同批次绑定、不解耦。
-  kernelVariants = {
-    alpine = {
-      kernel = { url = "${releaseBase}/vmlinuz-virt";
-                 sha256 = "1e6bf9027720c75c3ed0d79171f21b5791ee40ca9795d07c7c6e04dc5ea2ae90"; };
-      initrd = { url = "${releaseBase}/initrd";
-                 sha256 = "ed5fceba386a613811f758b8f447ff1a377bbf184e74c52160cc01122b433135"; };
-    };
-    custom = {
-      kernel = { url = "${releaseBase}/vmlinuz-router";
-                 sha256 = "49b1449ac78d9b72f3425299e2da70fa7bf43c06c4434938835e4c087b6e5503"; };
-      initrd = { url = "${releaseBase}/initramfs-empty.cpio";
-                 sha256 = "c0b1f70675c793df96e958306c94b3086375c35b2e91e497ffc3484bb93228d8"; };
-    };
+  # 内核资产：自建 vmlinuz-router（全 builtin、无 initramfs，CH 按文件头
+  # 识别 bzImage 直接引导）。资产名不带版本：LTS bump 只改 sha256
+  # （sync-flake-sha.py 自动完成），release tag 承担版本区分。
+  kernel = {
+    url = "${releaseBase}/vmlinuz-router";
+    sha256 = "0000000000000000000000000000000000000000000000000000000000000000";
   };
 
-  variant = kernelVariants.${cfg.kernel};
+  kernelImage = pkgs.fetchurl kernel;
+  rootfsImage = pkgs.fetchurl (osAssets.${cfg.os});
 
-  # 客户机内核包装：CH runner（x86_64 分支）取 ${kernel.dev}/vmlinux——
-  # 两种变体的内核文件都是 bzImage，CH 按文件头自动识别加载，故此处对
-  # alpine/custom 一视同仁。（将来若切 PVH，把真 ELF 放进 $dev/vmlinux 即可，
-  # runner 侧零改动；vmlinux 本就是 bzImage 的前置产物，build.sh 有产但不发布）
-  guestKernel = pkgs.runCommand "router-kernel-${cfg.kernel}" { outputs = [ "out" "dev" ]; } ''
-    mkdir -p $out $dev
-    cp ${cfg.kernelFile} $out/bzImage
-    cp ${cfg.kernelFile} $dev/vmlinux
+  # rootfs 只读副本路径含内容哈希：镜像更新 → 路径变 → ExecStart 变 →
+  # VM 必然重启；旧镜像文件保留，rollback 时旧 generation 直接指向旧镜像
+  imgId = builtins.substring 0 16 (builtins.hashString "sha256" (builtins.toString rootfsImage));
+  rootfsCopy = "/var/lib/router-vm/rootfs-${imgId}.qcow2";
+
+  # deploy 注入器资产（install.sh + lib/secrets.sh 打包；密钥绝不在此内）
+  deployPkg = pkgs.runCommand "router-vm-deploy.tar.gz" { } ''
+    tar czf $out -C ${../deploy-assets} .
   '';
 
-  # 状态盘路径带镜像内容哈希：镜像更新 → 路径变 → ExecStart 变 → VM 必然重启
-  # （volumes.image 固定路径不在 restartIfChanged 检测内，此前依赖 initrd
-  # store 路径碰巧变化才重启）；旧镜像文件保留，rollback 时旧 generation
-  # 直接指向旧镜像，无需重新复制
-  imgId = builtins.substring 0 16 (builtins.hashString "sha256" (builtins.toString cfg.rootfsImage));
-  stateImage = "/var/lib/alpine-router/rootfs-${imgId}.qcow2";
+  # 宿主侧 ssh 选项：guest host key 每次启动重新生成（无状态架构），
+  # 不能依赖 known_hosts；root/root 密码通道只在 LAN 侧（br-lan）可达
+  sshOpts = "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR";
+
+  # deploy 脚本（systemd 服务与手工命令共用）：
+  #   等待 VM 上线 → 从 /run/secrets 组装 env → scp 上传 → 远程执行 install.sh
+  # 手工部署可用 ROUTER_VM_ENV_FILE 指向传统 env 文件（见 env.example），
+  # 覆盖 sops 密钥源（调试/迁移场景）。
+  deployScript = ''
+    PATH=${lib.makeBinPath [ pkgs.coreutils pkgs.openssh pkgs.sshpass pkgs.iputils ]}:$PATH
+    export PATH
+    set -eu
+
+    VM_IP="${cfg.vmIp}"
+    DEPLOY_PKG="/etc/router-vm/deploy.tar.gz"
+    SECRETS_DIR="${cfg.secretsDir}"
+    SSH_OPTS="${sshOpts}"
+
+    # 组装 env 文件（密钥只在宿主 /run/secrets 与 guest 的 /tmp 瞬间存在）
+    ENV_FILE="$(mktemp /tmp/router-vm-env.XXXXXX)"
+    trap 'rm -f "$ENV_FILE"' EXIT
+    chmod 600 "$ENV_FILE"
+    if [ -n "''${ROUTER_VM_ENV_FILE:-}" ]; then
+        cp "$ROUTER_VM_ENV_FILE" "$ENV_FILE"
+    else
+        [ -f "$SECRETS_DIR/ssh-public-key" ] \
+            && printf 'SSH_PUBLIC_KEY="%s"\n' "$(cat "$SECRETS_DIR/ssh-public-key")" >> "$ENV_FILE"
+        [ -f "$SECRETS_DIR/tailscale-auth-key" ] \
+            && printf 'TAILSCALE_AUTH_KEY="%s"\n' "$(cat "$SECRETS_DIR/tailscale-auth-key")" >> "$ENV_FILE"
+        [ -f "$SECRETS_DIR/cloudflared-token" ] \
+            && printf 'CLOUDFLARED_TOKEN="%s"\n' "$(cat "$SECRETS_DIR/cloudflared-token")" >> "$ENV_FILE"
+    fi
+    [ -s "$ENV_FILE" ] || echo "提示: 未找到任何密钥（$SECRETS_DIR 无 sops 密钥文件），将只跑空注入"
+
+    # 等待 VM 上线（ping 轮询，最长 4 分钟）
+    _online=0
+    for _i in $(seq 1 120); do
+        if ping -c 1 -W 1 "$VM_IP" >/dev/null 2>&1; then _online=1; break; fi
+        sleep 2
+    done
+    [ "$_online" = 1 ] || { echo "错误: VM 未上线（$VM_IP），部署中止" >&2; exit 1; }
+
+    # 上传 + 远程注入。网络可达 ≠ sshd 就绪，重试 5 次（每次间隔 5 秒）
+    _rc=1
+    for _i in 1 2 3 4 5; do
+        if sshpass -p root scp $SSH_OPTS "$DEPLOY_PKG" "root@$VM_IP:/tmp/router-vm-deploy.tar.gz" \
+           && sshpass -p root scp $SSH_OPTS "$ENV_FILE" "root@$VM_IP:/tmp/router-vm.env" \
+           && sshpass -p root ssh $SSH_OPTS "root@$VM_IP" \
+                'rm -rf /tmp/router-vm-deploy && mkdir -p /tmp/router-vm-deploy && cd /tmp/router-vm-deploy && tar xzf /tmp/router-vm-deploy.tar.gz && mv /tmp/router-vm.env ./env && sh install.sh; _rc=$?; rm -f /tmp/router-vm-deploy.tar.gz /tmp/router-vm.env; exit $_rc'
+        then _rc=0; break; fi
+        sleep 5
+    done
+    [ "$_rc" = 0 ] || { echo "错误: 密钥注入失败" >&2; exit 1; }
+    echo "部署完成。Tailscale 登录请手动执行: router-vm-shell 'tailscale up'"
+  '';
 in
 
 {
-  options.microvm.router = {
-    enable = lib.mkEnableOption "Alpine Router MicroVM（POC，与 libvirt 方案二选一）";
+  options.services.router-vm = {
+    enable = lib.mkEnableOption "Router VM（cloud-hypervisor 直管，与 libvirt 方案二选一）";
 
     os = lib.mkOption {
       type = lib.types.enum [ "alpine" "gentoo" ];
       default = "alpine";
       description = ''
-        rootfs 发行版（选择对应的 rootfs asset；内核资产与发行版无关，
-        由 `kernel` 选项独立选择）。gentoo 为 musl-openrc 变体（首次构建
-        未出 release 前选择它会在 fetchurl 处失败并显示真实 sha256）。
-      '';
-    };
-
-    kernel = lib.mkOption {
-      type = lib.types.enum [ "alpine" "custom" ];
-      default = "alpine";
-      description = ''
-        客户机内核变体（rootfs 与本选项无关，同一 rootfs 同时携带两者的
-        /lib/modules/<版本串>）：
-
-        - `alpine`：Alpine 官方 linux-virt 包（vmlinuz-virt + 注入 ext4 依赖链
-          的 initrd）。12M 内核 + 10.3M initrd，享 Alpine 的安全回补。默认值。
-        - `custom`：本仓库自建（跟最新 LTS），引导链全 builtin。4.0M 内核 +
-          512 字节空 initramfs 占位（未压缩 cpio，microvm.nix 的 runner 无条件传
-          --initramfs，声明侧无法不传）。CVE 响应转由本仓库的 LTS bump 负责。
-      '';
-    };
-
-    kernelFile = lib.mkOption {
-      type = lib.types.path;
-      default = pkgs.fetchurl variant.kernel;
-      defaultText = lib.literalExpression "按 `kernel` 变体从 release 拉取";
-      description = ''
-        客户机内核（本仓库 release asset，按 `kernel` 变体选择）。
-        本地调试可覆盖：alpine 变体用 image/assemble.sh 产物的 vmlinuz-virt，
-        custom 变体用 kernel/build.sh 产物的 vmlinuz-router。
-      '';
-    };
-
-    initrd = lib.mkOption {
-      type = lib.types.path;
-      default = pkgs.fetchurl variant.initrd;
-      defaultText = lib.literalExpression "按 `kernel` 变体从 release 拉取";
-      description = ''
-        initramfs（按 `kernel` 变体选择）：alpine 变体是注入了 ext4 依赖链的
-        initrd（挂根必需）；custom 变体是 512 字节空 cpio 占位（未压缩，全
-        builtin 不需要 initramfs，但 microvm.nix 的 runner 无条件传 --initramfs）。
-      '';
-    };
-
-    rootfsImage = lib.mkOption {
-      type = lib.types.path;
-      default = pkgs.fetchurl {
-        url = osAssets.${cfg.os}.url;
-        sha256 = osAssets.${cfg.os}.sha256;
-      };
-      description = ''
-        VM 根磁盘 qcow2（本仓库 release asset，按 `os` 参数选择发行版）。
-        内含 rootfs + modloop 模块闭包（alpine 变体用）+ 自建内核的模块
-        元数据（custom 变体用）——与 `kernel` 选项无关，两者共用同一 rootfs。
+        rootfs 发行版（选择对应的 release 资产 <distro>-rootfs.qcow2；
+        内核是发行版无关的共享资产 vmlinuz-router）。
       '';
     };
 
@@ -192,107 +169,45 @@ in
       default = 256;
       description = ''
         初始 balloon 大小（MB，CH 要求 128M 对齐）；宿主 OOM 时自动放气归还。
+        0 = 禁用 balloon。
       '';
     };
 
     wanBridge = lib.mkOption {
       type = lib.types.str;
       default = "br-wan";
-      description = "WAN 侧宿主网桥（tap 自动挂入）";
+      description = "WAN 侧宿主网桥（tap 创建后 networkd 自动挂入）";
     };
 
     lanBridge = lib.mkOption {
       type = lib.types.str;
       default = "br-lan";
-      description = "LAN 侧宿主网桥（tap 自动挂入）";
+      description = "LAN 侧宿主网桥（tap 创建后 networkd 自动挂入）";
     };
 
     vmIp = lib.mkOption {
       type = lib.types.str;
       default = "192.168.10.1";
-      description = "VM LAN 口 IP（deploy 脚本的 ssh 目标）。与 network.env 和宿主 bridges 配置保持一致。";
+      description = "VM LAN 口 IP（deploy 脚本的 ssh 目标）。与 guest 的 network.env 和宿主网桥配置保持一致。";
+    };
+
+    secretsDir = lib.mkOption {
+      type = lib.types.str;
+      default = "/run/secrets";
+      description = ''
+        宿主密钥目录（sops-nix 的默认解密落点）。router-vm-deploy 在每次
+        VM 启动后从这里读取以下文件注入 guest（缺文件则跳过对应注入）：
+          ssh-public-key / tailscale-auth-key / cloudflared-token
+      '';
     };
   };
 
   config = lib.mkIf cfg.enable {
-    # ---- deploy（密钥注入） ----
-    # 密钥注入器资产（install.sh + lib/secrets.sh）打包为 tarball；
-    # 真实密钥在宿主的 /etc/libvirt/alpine-router.env（600 权限，git 外）
-    environment.etc."libvirt/alpine-router-deploy.tar.gz".source =
-      pkgs.runCommand "alpine-router-deploy.tar.gz" { } ''
-        tar czf $out -C ${../deploy-assets} .
-      '';
-
-    # 密钥模板：宿主侧 sudo cp 后填真实值（chmod 600）
-    environment.etc."libvirt/alpine-router.env.example".text =
-      builtins.readFile ../deploy-assets/env.example;
-
-    environment.systemPackages = [
-      (pkgs.writeShellScriptBin "alpine-router-deploy" ''
-        #!/bin/sh
-        set -e
-
-        VM_IP="${cfg.vmIp}"
-        DEPLOY_PKG="/etc/libvirt/alpine-router-deploy.tar.gz"
-        ENV_FILE="/etc/libvirt/alpine-router.env"
-
-        echo "Deploying Alpine Router secrets..."
-
-        # 检查 VM 是否在线
-        if ! ping -c 1 -W 2 "$VM_IP" >/dev/null 2>&1; then
-          echo "Error: VM is offline or not reachable at $VM_IP"
-          exit 1
-        fi
-
-        # 传输部署包
-        echo "Uploading deployment package..."
-        scp "$DEPLOY_PKG" "root@$VM_IP:/tmp/alpine-router-deploy.tar.gz"
-
-        # 可选：传输密钥 env 文件（不存在则无密钥部署）
-        if [ -f "$ENV_FILE" ]; then
-          echo "Uploading env file (secrets)..."
-          scp "$ENV_FILE" "root@$VM_IP:/tmp/alpine-router.env"
-        else
-          echo "Note: $ENV_FILE not found, deploying without secrets"
-        fi
-
-        # 执行注入脚本（结束后清理 /tmp 中的 tarball 和明文密钥 env 文件，保留退出码）
-        echo "Running install.sh on VM..."
-        ssh "root@$VM_IP" 'rm -rf /tmp/alpine-router-deploy && mkdir -p /tmp/alpine-router-deploy && cd /tmp/alpine-router-deploy && tar xzf /tmp/alpine-router-deploy.tar.gz && if [ -f /tmp/alpine-router.env ]; then mv /tmp/alpine-router.env ./env; fi; sh install.sh; _rc=$?; rm -f /tmp/alpine-router-deploy.tar.gz /tmp/alpine-router.env; exit $_rc'
-
-        echo "Deployment complete!"
-      '')
-
-      (pkgs.writeShellScriptBin "alpine-router-shell" ''
-        #!/bin/sh
-        # 快速连接到 Alpine Router VM
-        ssh root@${cfg.vmIp} "$@"
-      '')
-    ];
-    # CPU 独占：指定核隔离给路由器 VM（宿主调度器不再使用该核）
+    # ---- CPU 独占：指定核隔离给路由器 VM（宿主调度器不再使用该核） ----
     boot.kernelParams = [ "isolcpus=${toString cfg.cpu}" "rcu_nocbs=${toString cfg.cpu}" ];
 
-    # 首次启动 / 镜像更新时把 release 镜像复制到可写状态目录。
-    # 文件名含内容哈希：不存在才复制（幂等）；旧版本镜像文件保留
-    # 供 rollback 复用，可手动清理
-    systemd.services.alpine-router-disk = {
-      wantedBy = [ "multi-user.target" ];
-      requiredBy = [ "microvm@alpine-router.service" ];
-      before = [ "microvm@alpine-router.service" ];
-      serviceConfig.Type = "oneshot";
-      script = ''
-        STATE_DIR=/var/lib/alpine-router
-        STATE_IMG=${stateImage}
-        mkdir -p "$STATE_DIR"
-        if [ ! -f "$STATE_IMG" ]; then
-          echo "初始化 VM 根磁盘: ${cfg.rootfsImage} -> $STATE_IMG"
-          install -m 0644 "${cfg.rootfsImage}" "$STATE_IMG"
-        fi
-      '';
-    };
-
-    # CH 的 tap 接口由 microvm 在 VM 启动时创建，networkd 在接口出现时
-    # 自动将其加入对应桥（bridge 接口类型是 qemu 特有，CH 不支持）
+    # ---- 网络：tap 由 router-vm.service 的 preStart 创建，networkd 在
+    #      tap 出现时自动挂入对应桥（CH 无 qemu 的 bridge 接口类型） ----
     systemd.network.networks = {
       "50-router-wan" = {
         matchConfig.Name = "router-wan";
@@ -304,53 +219,99 @@ in
       };
     };
 
-    microvm.vms.alpine-router = {
-      autostart = true;
-      # 注意：config 是单个 NixOS 模块（非列表），VM 内选项挂在 microvm.* 下
-      config = {
-        microvm.hypervisor = "cloud-hypervisor";
+    # ---- VM 本体 ----
+    systemd.services.router-vm = {
+      description = "Router VM (cloud-hypervisor)";
+      after = [ "network.target" ];
+      wants = [ "network.target" ];
+      wantedBy = [ "multi-user.target" ];
+      path = [ pkgs.iproute2 pkgs.coreutils ];
 
-        microvm.vcpu = cfg.vcpus;   # vcpu0 独占隔离核；其余动态
-        microvm.mem = cfg.mem;
+      preStart = ''
+        mkdir -p /var/lib/router-vm /run/router-vm
 
-        # 动态内存：virtio-balloon（CH 要求 128M 对齐粒度）。
-        # 备选：virtio-mem 热插拔（hotplugMem），可 ch-remote 手动伸缩
-        microvm.balloon = true;
-        microvm.initialBalloonMem = cfg.initialBalloonMem;
-        microvm.deflateOnOOM = true;
+        # rootfs 只读副本（幂等；ExecStart 引用含哈希路径，升级时 systemd
+        # 检测 ExecStart 变化自动重启 VM）
+        if [ ! -f "${rootfsCopy}" ]; then
+          install -m 0644 "${rootfsImage}" "${rootfsCopy}"
+        fi
 
-        # vcpu0 affinity（--cpus boot=N 由 microvm 生成，affinity 经 extraArgs 合并）
-        # 语法：CH v53 用 vcpu@[host_cpus] 格式（WSL 实测验证）
-        microvm.cloud-hypervisor.extraArgs = [
-          "--cpus" "affinity=[0@[${toString cfg.cpu}]]"
+        # tap 创建（挂桥由 networkd 负责，见上方 systemd.network）
+        for _tap in router-wan router-lan; do
+          ip link show "$_tap" >/dev/null 2>&1 || ip tuntap add "$_tap" mode tap
+          ip link set "$_tap" up
+        done
+      '';
+
+      serviceConfig = {
+        Type = "simple";
+        ExecStart = lib.concatStringsSep " " [
+          "${pkgs.cloud-hypervisor}/bin/cloud-hypervisor"
+          "--kernel ${kernelImage}"
+          "--cmdline \"console=ttyS0 root=/dev/vda rootfstype=ext4 ro\""
+          "--disk path=${rootfsCopy},readonly=on"
+          "--cpus boot=${toString cfg.vcpus},affinity=[0@[${toString cfg.cpu}]]"
+          "--memory size=${toString cfg.mem}M"
+          (lib.optionalString (cfg.initialBalloonMem > 0)
+            "--balloon size=${toString cfg.initialBalloonMem}M,deflate_on_oom=true")
+          "--net tap=router-wan,mac=02:00:00:01:00:01"
+          "--net tap=router-lan,mac=02:00:00:01:00:02"
+          "--serial file=/run/router-vm/console.log"
+          "--console off"
+          "--api-socket /run/router-vm/api.sock"
         ];
 
-        # vsock（0=hypervisor 1=loopback 2=host 保留，guest 从 3 起）。
-        # 注：microvm -s 的 vsock SSH 需要 guest 侧监听 vsock 的 sshd
-        # （Alpine 默认只监听 TCP），此处先占 CID 供将来扩展
-        microvm.vsock.cid = 3;
+        # 优雅关机：经 api-socket 通知 guest（ACPI shutdown）。guest 侧
+        # 若无响应（如 acpid 缺失），TimeoutStopSec 到期由 systemd 兜底
+        # SIGKILL——guest 无状态（ro rootfs + tmpfs 状态），强杀无害
+        ExecStop = "${pkgs.cloud-hypervisor}/bin/ch-remote --api-socket /run/router-vm/api.sock shutdown-vmm";
+        TimeoutStopSec = 90;
 
-        # 客户机内核 / initramfs（按 kernel 变体，见上方 kernelVariants）
-        microvm.kernel = guestKernel;
-        microvm.initrdPath = "${cfg.initrd}";
-        # rootfstype=ext4：alpine 变体的 initramfs 据此 modprobe ext4；
-        # custom 变体 ext4 已 builtin，该参数只是省掉文件系统探测
-        microvm.kernelParams = [ "root=/dev/vda" "rootfstype=ext4" "rw" ];
+        # 清理：socket + tap（guest 自身关机/崩溃路径下 ExecStop 不会跑）
+        ExecStopPost = ''
+          rm -f /run/router-vm/api.sock
+          ip link del router-wan 2>/dev/null || true
+          ip link del router-lan 2>/dev/null || true
+        '';
 
-        microvm.volumes = [{
-          # vda：根卷（disk-prep 维护的可写状态副本，路径含内容哈希）
-          image = stateImage;
-          mountPoint = "/";
-          autoCreate = false;
-          imageType = "qcow2";   # CH 的 --disk 默认 image_type=raw，必须显式声明
-        }];
-
-        # tap 由 microvm 创建，networkd 挂进宿主桥
-        microvm.interfaces = [
-          { type = "tap"; id = "router-wan"; mac = "02:00:00:01:00:01"; }
-          { type = "tap"; id = "router-lan"; mac = "02:00:00:01:00:02"; }
-        ];
+        Restart = "on-failure";
       };
     };
+
+    # ---- 密钥注入：每次 VM 启动后自动 deploy（guest tmpfs 状态随重启清空，
+    #      必须重新注入）。PartOf：宿主重启 VM 时同步重新 deploy ----
+    systemd.services.router-vm-deploy = {
+      description = "Router VM secret injection (after each VM boot)";
+      after = [ "router-vm.service" ];
+      partOf = [ "router-vm.service" ];
+      wantedBy = [ "multi-user.target" ];
+      serviceConfig.Type = "oneshot";
+      script = deployScript;
+    };
+
+    # ---- deploy 资产与命令 ----
+    # 注入器 tarball（无密钥）与手工部署用的 env 模板（sops 流程下
+    # 一般不需要；ROUTER_VM_ENV_FILE 调试/迁移场景用）
+    environment.etc."router-vm/deploy.tar.gz".source = deployPkg;
+    environment.etc."router-vm/env.example".text =
+      builtins.readFile ../deploy-assets/env.example;
+
+    environment.systemPackages = [
+      (pkgs.writeShellScriptBin "router-vm-deploy" ''
+        exec ${pkgs.bash}/bin/bash -c ${lib.escapeShellArg deployScript}
+      '')
+
+      (pkgs.writeShellScriptBin "router-vm-shell" ''
+        PATH=${lib.makeBinPath [ pkgs.openssh pkgs.sshpass ]}:$PATH
+        export PATH
+        exec sshpass -p root ssh ${sshOpts} root@${cfg.vmIp} "$@"
+      '')
+
+      (pkgs.writeShellScriptBin "router-vm-console" ''
+        PATH=${lib.makeBinPath [ pkgs.coreutils ]}:$PATH
+        export PATH
+        exec tail -f /run/router-vm/console.log
+      '')
+    ];
   };
 }
