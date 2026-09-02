@@ -2,8 +2,11 @@
 # ============================================================
 # 路由 VM 镜像冒烟测试
 #
-# 下载 microvm-router-image 的 release 资产 → 校验 sha256 → 用
+# 下载 router-image 的 release 资产 → 校验 sha256 → 用
 # qemu / cloud-hypervisor 启动并观察串口（ttyS0）。
+#
+# 资产两件套：vmlinuz-router（自建内核，全 builtin、无 initramfs）+
+# <distro>-rootfs.qcow2。guest 无状态（ro rootfs），与生产同参数启动。
 #
 # 用法:
 #   test/smoke-test.sh alpine                   # 只测 alpine
@@ -12,23 +15,16 @@
 #   test/smoke-test.sh alpine --verify-only     # 只下载+校验，不启动
 #   test/smoke-test.sh gentoo --backend cloud-hypervisor
 #
-#   # 用 release 里的自建内核（全 builtin）测同一批 rootfs
-#   test/smoke-test.sh alpine --kernel custom
-#   test/smoke-test.sh alpine --kernel custom --no-initrd   # 连空占位也不传
-#
 # 选项:
-#   --tag TAG         release tag（默认自动探测 GitHub 最新）
+#   --tag TAG         release tag（默认自动探测最新 router-vm-* 前缀）
 #   --backend NAME    qemu | cloud-hypervisor（默认 qemu）
-#   --kernel VARIANT  alpine | custom（默认 alpine），对应 router.nix 的
-#                     microvm.router.kernel。两者都从同一 release 下载并校验：
-#                       alpine → vmlinuz-virt   + initrd（10.3M，注入 ext4 依赖链）
-#                       custom → vmlinuz-router + initramfs-empty.cpio（512 字节未压缩空 cpio）
-#   --no-initrd       不传 initrd。custom 变体全 builtin，占位 initramfs 只为满足
-#                     microvm.nix 的无条件 --initramfs；本地可直接省掉它
-#   --assert          tee 启动日志并断言：FATAL: Module / Function not
-#                     implemented / hwclock: / Kernel panic 一律视为失败
-#                     （内核能启动 ≠ 能力完整；openrc 的 modules 服务结构上
-#                     无法失败，日志是唯一能拦住静默丢失的地方）
+#   --assert          qemu：tee 启动日志并断言；CH：非交互断言
+#                     （后台启动 + --serial file 落盘日志 + 轮询 login:
+#                      或超时 + 强制清理）。断言项：FATAL: Module /
+#                     Function not implemented / hwclock: / Kernel panic
+#                     / 未到达 login 一律视为失败（内核能启动 ≠ 能力完整；
+#                     openrc 的 modules 服务结构上无法失败，日志是唯一
+#                     能拦住静默丢失的地方）
 #   --assets-dir DIR  资产缓存目录（默认 <仓库>/build/smoke-assets，已被 .gitignore 忽略）
 #   --no-download     跳过下载，只用缓存里已有的文件
 #   --force-download  无条件重新下载（默认已会按 sha256 自动刷新过期缓存）
@@ -38,15 +34,23 @@
 #   --no-proxy        强制直连，不走代理
 #   -h|--help         本帮助
 #
+# 两条启动路径的定位：
+#   qemu              交互验证（串口直连 ttyS0，登录 root/root，rc-status /
+#                     nft list ruleset）。qemu 无 KVM 要求、-snapshot 不落盘
+#   cloud-hypervisor  与生产同参数的启动验证（--kernel + --disk readonly=on
+#                     + ro cmdline）。--assert 模式为非交互（重定向下
+#                     --serial tty 不可用，改 --serial file 落日志，
+#                     不尝试 tee/script 保 TTY）；交互测试归 qemu
+#
 # 依赖: curl sha256sum python3（探测/解析 JSON）。
-#   启动需要 qemu-system-x86_64 或 cloud-hypervisor（--verify-only 不需要）。
-#   登录串口: 用户 root / 密码 root（CI 镜像默认 ROOT_PASSWORD=root）。
+#   启动需要 qemu-system-x86_64 或 cloud-hypervisor（--verify-only 不需要；
+#   CH 需要 root/KVM 权限）。
 # ============================================================
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-REPO_SLUG="allenmagic/microvm-router-image"   # 用 --repo 覆盖（fork 时）
+REPO_SLUG="allenmagic/router-image"   # 用 --repo 覆盖（fork 时）
 TAG=""                                        # 空 = 自动探测
 BACKEND="qemu"
 ASSETS_DIR="${REPO_ROOT}/build/smoke-assets"
@@ -57,9 +61,7 @@ LOGLEVEL=""      # 空 = 不追加 loglevel；如 --loglevel 3
 PROXY_MODE="auto"   # auto | on | off（下载是否走 proxychains）
 PROXY=""            # 实际前缀命令（resolve 后，空 = 直连）
 DISTRO=""
-KERNEL="alpine"     # --kernel：内核变体 alpine | custom（都从 release 取）
-USE_INITRD=1        # --no-initrd：置 0（custom 全 builtin，占位 initramfs 可省）
-ASSERT=0            # --assert：tee 启动日志并断言（无 FATAL/ENOSYS/panic 等）
+ASSERT=0            # --assert：捕获启动日志并断言（无 FATAL/ENOSYS/panic 等）
 
 usage() {
     sed -n '2,/^# =====/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -82,8 +84,6 @@ while [ $# -gt 0 ]; do
         --force-download) FORCE_DOWNLOAD=1; shift ;;
         --verify-only) VERIFY_ONLY=1; shift ;;
         --loglevel)    LOGLEVEL="${2:?--loglevel 需要值(0-7)}"; shift 2 ;;
-        --kernel)      KERNEL="${2:?--kernel 需要值(alpine|custom)}"; shift 2 ;;
-        --no-initrd)   USE_INITRD=0; shift ;;
         --assert)      ASSERT=1; shift ;;
         --proxy)       PROXY_MODE="on"; shift ;;
         --no-proxy)    PROXY_MODE="off"; shift ;;
@@ -94,21 +94,22 @@ done
 
 [ -n "$DISTRO" ] || die "缺少发行版参数（alpine|gentoo|all），见 --help"
 
+# 后端 → 启动函数名。后端名含连字符，不能直接拼进函数名，故在此显式映射。
 case "$BACKEND" in
-    qemu|cloud-hypervisor) ;;
+    qemu)             BOOT_FN="boot_qemu" ;;
+    cloud-hypervisor) BOOT_FN="boot_ch" ;;
     *) die "未知后端: $BACKEND（支持 qemu | cloud-hypervisor）" ;;
 esac
 
-# 内核变体 → release 资产名。与 nixos-modules/router.nix 的 kernelVariants
-# 一一对应，改那边要同步改这里（资产名不带版本号，故 LTS point release bump
-# 不影响本表）。
-case "$KERNEL" in
-    alpine) KERNEL_ASSET="vmlinuz-virt";   INITRD_ASSET="initrd" ;;
-    custom) KERNEL_ASSET="vmlinuz-router"; INITRD_ASSET="initramfs-empty.cpio" ;;
-    *) die "未知内核变体: $KERNEL（支持 alpine | custom）" ;;
-esac
-
 mkdir -p "$ASSETS_DIR"
+
+# cloud-hypervisor 需要 root/KVM 权限。提前获取凭证，避免后续卡在密码提示
+if [ "$BACKEND" = "cloud-hypervisor" ]; then
+    if ! sudo -n true 2>/dev/null; then
+        log "cloud-hypervisor 需要 root 权限，请输入密码："
+        sudo -v || die "sudo 认证失败"
+    fi
+fi
 
 # 代理解析：默认 auto（装了 proxychains 就用于下载），--proxy 强制、--no-proxy 直连
 detect_proxy() {
@@ -123,31 +124,48 @@ case "$PROXY_MODE" in
 esac
 [ -n "$PROXY" ] && log "下载走代理: $PROXY"
 
-# 内核 cmdline：--loglevel 可选追加，用于压掉 nft warn 级日志对串口的干扰
-KCMD="console=ttyS0 root=/dev/vda rootfstype=ext4 rw"
+# 内核 cmdline：与生产同参数（guest 无状态，rootfs 只读；写点已由镜像内
+# 符号链接指到 /run）。--loglevel 可选追加，用于压掉 nft warn 级日志对串口的干扰
+KCMD="console=ttyS0 root=/dev/vda rootfstype=ext4 ro"
 [ -n "$LOGLEVEL" ] && KCMD="${KCMD} loglevel=${LOGLEVEL}"
 
 # ------------------------------------------------------------
 # 探测最新 release tag（无 --tag 时）
 # ------------------------------------------------------------
+# 新前缀 router-vm-* 优先；尚无时回退最新 release（旧格式 tag 的镜像仍是
+# 三件套/非无状态，CH --assert 可能失败，仅过渡期可用——尽快触发 CI 出
+# router-vm-* 前缀的 release）
 latest_tag() {
-    local url="https://api.github.com/repos/${REPO_SLUG}/releases/latest"
-    $PROXY python3 - "$url" <<'PY'
+    local url="https://api.github.com/repos/${REPO_SLUG}/releases?per_page=50"
+    local tags
+    tags="$($PROXY python3 - "$url" <<'PY'
 import json, sys, urllib.request
 req = urllib.request.Request(sys.argv[1], headers={"User-Agent": "smoke-test"})
 try:
     with urllib.request.urlopen(req, timeout=30) as r:
-        print(json.load(r).get("tag_name", ""))
-except Exception as e:
-    print("", file=sys.stderr)
+        for rel in json.load(r):
+            print(rel.get("tag_name", ""))
+except Exception:
     sys.exit(1)
 PY
+)" || die "探测失败，请用 --tag 显式指定"
+
+    local t
+    for t in $tags; do
+        case "$t" in
+            router-vm-*) printf '%s\n' "$t"; return 0 ;;
+        esac
+    done
+
+    t="$(printf '%s\n' $tags | head -1)"
+    [ -n "$t" ] || die "未取到任何 release，请用 --tag 显式指定"
+    log "警告: 尚无 router-vm-* 前缀的 release，回退旧格式 tag $t（旧镜像非无状态，断言可能失败）"
+    printf '%s\n' "$t"
 }
 
 if [ -z "$TAG" ]; then
     log "探测最新 release tag ..."
-    TAG="$(latest_tag)" || die "探测失败，请用 --tag 显式指定"
-    [ -n "$TAG" ] || die "未取到 tag_name，请用 --tag 显式指定"
+    TAG="$(latest_tag)"
 fi
 BASE="https://github.com/${REPO_SLUG}/releases/download/${TAG}"
 log "release: ${TAG}（${BASE}）"
@@ -164,9 +182,8 @@ fetch() {
 # SHA256SUMS 路径（判断缓存是否最新的依据）
 SUMS="${ASSETS_DIR}/SHA256SUMS"
 
-# 校验：SHA256SUMS 里 initrd/vmlinuz-virt 因双发行版各写一次而存在重复条目，
-# 且 initrd 两条哈希不同（gzip 未加 -n 烙了时间戳）——所以判定规则是
-# 「命中同名文件下的任意一条」即可，而不是 sha256sum -c 的严格一一对应。
+# 校验：判定规则是「命中同名文件下的任意一条」即可（不要求 sha256sum -c
+# 的严格一一对应，兼容历史上 SHA256SUMS 出现重复条目的旧 tag）。
 # 返回 0 = 缓存文件的 sha256 命中（已是最新），非 0 = 缺失或过期。
 _is_current() {
     local f="$1" h
@@ -175,12 +192,10 @@ _is_current() {
     awk -v n="$f" -v h="$h" '$2==n && $1==h {found=1} END{exit !found}' "$SUMS"
 }
 
-# 本次真正要用到的 release 资产。内核/initrd 按 --kernel 变体取名，两个变体
-# 都走同一套下载+校验；--no-initrd 时 initramfs 既不下载也不校验。
+# 本次真正要用到的 release 资产（两件套：内核 + rootfs）
 _asset_list() {
     local distro="$1"
-    printf '%s\n' "$KERNEL_ASSET"
-    [ "$USE_INITRD" = 0 ] || printf '%s\n' "$INITRD_ASSET"
+    printf '%s\n' "vmlinuz-router"
     printf '%s-rootfs.qcow2\n' "$distro"
 }
 
@@ -198,9 +213,6 @@ verify() {
             die "  ✗ ${f}: 校验失败（sha256 不在 release SHA256SUMS 中）"
         fi
     done < <(_asset_list "$distro")
-
-    log "  · 内核变体: ${KERNEL}（${KERNEL_ASSET}）"
-    [ "$USE_INITRD" = 0 ] && log "  ~ 不使用 initrd（内核需 ext4/virtio 全 builtin）"
     return 0
 }
 
@@ -225,9 +237,7 @@ download() {
 # ------------------------------------------------------------
 # 启动（前台，串口直连）
 # ------------------------------------------------------------
-# 内核与 initrd 的实际取值（--kernel 变体 / --no-initrd 的落点）
-_kernel_path() { printf '%s' "${ASSETS_DIR}/${KERNEL_ASSET}"; }
-_initrd_path() { printf '%s' "${ASSETS_DIR}/${INITRD_ASSET}"; }
+_kernel_path() { printf '%s' "${ASSETS_DIR}/vmlinuz-router"; }
 
 # ------------------------------------------------------------
 # 启动日志断言
@@ -267,9 +277,15 @@ _assert_log() {
     # 这里保留该模式仅为捕获非 -q 调用方（如手工 modprobe、其他服务）的失败。
     _expect_absent 'FATAL: Module'          '有模块名解析失败（非 -q 调用方）'
     _expect_absent 'Function not implemented' '内核缺 syscall（如 CONFIG_FILE_LOCKING 未开）'
-    _expect_absent 'hwclock:'                'RTC 不可用（缺 RTC_CLASS/RTC_DRV_CMOS/RTC_INTF_DEV）'
+    # hwclock 只在 qemu 路径断言：CH 不模拟 CMOS RTC（设计如此，见
+    # kernel/config.fragment 的 RTC 段），hwclock 报错是 CH 下的预期行为；
+    # qemu 有 mc146818，报错才说明 RTC 驱动链缺失（曾丢过 RTC_INTF_DEV）
+    if [ "$BACKEND" = "qemu" ]; then
+        _expect_absent 'hwclock:'            'RTC 不可用（缺 RTC_CLASS/RTC_DRV_CMOS/RTC_INTF_DEV）'
+    fi
     _expect_absent 'Kernel panic'            '内核 panic'
     _expect_absent 'Unable to mount root'    '根盘挂载失败（virtio_blk/ext4 未 builtin 且无 initrd）'
+    _expect_absent 'Read-only file system'   'ro 写点漏处理（有服务写 rootfs 失败）'
 
     # 正向断言：必须真的走完启动
     if grep -aq 'login:' "$plain"; then
@@ -287,12 +303,9 @@ boot_qemu() {
     local distro="$1"
     command -v qemu-system-x86_64 >/dev/null 2>&1 || \
         die "未找到 qemu-system-x86_64（Arch: sudo pacman -S qemu-base）"
-    local initrd_args=()
-    [ "$USE_INITRD" = 1 ] && initrd_args=(-initrd "$(_initrd_path)")
     log "qemu 启动 ${distro}（串口直连 ttyS0；退出按 Ctrl-A 然后 X）"
     qemu-system-x86_64 -m 512 -smp 2 \
         -kernel "$(_kernel_path)" \
-        "${initrd_args[@]}" \
         -append "$KCMD" \
         -snapshot \
         -drive "file=${ASSETS_DIR}/${distro}-rootfs.qcow2,format=qcow2,if=virtio" \
@@ -306,26 +319,73 @@ boot_ch() {
     # AUR 的 cloud-hypervisor-bin 只装 cloud-hypervisor-static（无 cloud-hypervisor 主名）
     local ch; ch="$(command -v cloud-hypervisor 2>/dev/null || command -v cloud-hypervisor-static 2>/dev/null)"
     [ -n "$ch" ] || die "未找到 cloud-hypervisor（Arch AUR: paru -S cloud-hypervisor-bin）"
+
     # CH 无 qemu 的 -snapshot 等价物，先复制到临时文件再启动，避免污染缓存镜像
-    # （与生产 disk-prep 先复制到状态盘同一思路）
+    # （与生产 disk-prep 先复制到只读副本同一思路）
     local img="${ASSETS_DIR}/${distro}-rootfs.qcow2"
     local scratch; scratch="$(mktemp --suffix=.qcow2)" || die "创建临时镜像失败"
     log "复制镜像到临时文件（避免污染缓存）..."
     cp "$img" "$scratch"
-    local initramfs_args=()
-    [ "$USE_INITRD" = 1 ] && initramfs_args=(--initramfs "$(_initrd_path)")
-    log "cloud-hypervisor 启动 ${distro}（纯 boot 冒烟，未接 tap；Ctrl+C 退出）"
+    log "cloud-hypervisor 启动 ${distro}（与生产同参数；串口直连 ttyS0；Ctrl+C 退出）"
     sudo "$ch" \
         --kernel "$(_kernel_path)" \
-        "${initramfs_args[@]}" \
         --cmdline "$KCMD" \
-        --disk "path=$scratch" \
+        --disk "path=$scratch,readonly=on,image_type=qcow2" \
         --cpus boot=2 \
         --memory size=512M \
-        --serial tty --console off
+        --serial tty \
+        --console off
     local rc=$?
     rm -f "$scratch"
     return $rc
+}
+
+# CH 路径的 --assert：非交互断言。重定向下 --serial tty 不可用（无控制终端），
+# 改为与生产同款 --serial file 落盘日志：后台启动 → 轮询日志至 login: 或
+# 超时（120s）或 CH 提前退出 → 强制清理（断言只关心能不能到 login，
+# 不依赖 guest 优雅关机）→ 日志交给 _assert_log。
+boot_ch_assert() {
+    local distro="$1" blog="$2"
+    local ch; ch="$(command -v cloud-hypervisor 2>/dev/null || command -v cloud-hypervisor-static 2>/dev/null)"
+    [ -n "$ch" ] || die "未找到 cloud-hypervisor（Arch AUR: paru -S cloud-hypervisor-bin）"
+
+    local img="${ASSETS_DIR}/${distro}-rootfs.qcow2"
+    local scratch; scratch="$(mktemp --suffix=.qcow2)" || die "创建临时镜像失败"
+    cp "$img" "$scratch"
+
+    log "cloud-hypervisor 后台启动 ${distro}（--serial file=${blog#$REPO_ROOT/}）"
+    sudo "$ch" \
+        --kernel "$(_kernel_path)" \
+        --cmdline "$KCMD" \
+        --disk "path=$scratch,readonly=on,image_type=qcow2" \
+        --cpus boot=2 \
+        --memory size=512M \
+        --serial "file=$blog" \
+        --console off &
+    local ch_pid=$!
+
+    # 轮询日志至 login: / 超时 / CH 提前退出
+    local deadline=$(( $(date +%s) + 120 ))
+    local reached=0
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        if [ -f "$blog" ] && grep -aq 'login:' "$blog" 2>/dev/null; then
+            reached=1; break
+        fi
+        kill -0 "$ch_pid" 2>/dev/null || break
+        sleep 2
+    done
+
+    # 强制清理：kill CH 本体（sudo 进程被杀会遗留孤儿，用 scratch 路径精确定位）
+    sudo pkill -f "$scratch" 2>/dev/null || true
+    wait "$ch_pid" 2>/dev/null || true
+    rm -f "$scratch"
+
+    if [ "$reached" = 1 ]; then
+        log "${distro} 到达 login（${blog#$REPO_ROOT/}）"
+        return 0
+    fi
+    log "${distro} 未到达 login（超时或提前退出，日志见 ${blog#$REPO_ROOT/}）"
+    return 1
 }
 
 # ------------------------------------------------------------
@@ -335,7 +395,7 @@ main() {
     local distros
     if [ "$DISTRO" = "all" ]; then distros="alpine gentoo"; else distros="$DISTRO"; fi
 
-    # 阶段一：下载 + 校验（三件套共用，只下一次）
+    # 阶段一：下载 + 校验（两件套共用，只下一次）
     for d in $distros; do
         [ "$DO_DOWNLOAD" = 1 ] && download "$d"
         log "校验 ${d} 资产 ..."
@@ -348,14 +408,22 @@ main() {
     local assert_fails=0
     for d in $distros; do
         log "========== 启动 ${d}（登录 root/root；验证 rc-status、nft list ruleset）=========="
+        local blog="${ASSETS_DIR}/boot-${d}.log"
         set +e
         if [ "$ASSERT" = 1 ]; then
-            # tee 留一份日志供断言；串口仍直连终端，交互不受影响
-            local blog="${ASSETS_DIR}/boot-${d}.log"
-            "boot_${BACKEND}" "$d" 2>&1 | tee "$blog"
-            local rc=${PIPESTATUS[0]}
+            if [ "$BACKEND" = "cloud-hypervisor" ]; then
+                # CH 断言：非交互（--serial file 落日志），到达 login 即停
+                boot_ch_assert "$d" "$blog"
+                local rc=$?
+            else
+                # qemu 断言：后台运行（-nographic 串口走 stdio），60 秒超时自动终止
+                timeout 60s "$BOOT_FN" "$d" > "$blog" 2>&1
+                local rc=$?
+                # timeout 返回 124 表示超时（通常是到了 login 提示），算成功
+                [ "$rc" -eq 124 ] && rc=0
+            fi
         else
-            "boot_${BACKEND}" "$d"
+            "$BOOT_FN" "$d"
             local rc=$?
         fi
         set -e

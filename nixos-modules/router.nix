@@ -249,7 +249,8 @@ in
           "${pkgs.cloud-hypervisor}/bin/cloud-hypervisor"
           "--kernel ${kernelImage}"
           "--cmdline \"console=ttyS0 root=/dev/vda rootfstype=ext4 ro\""
-          "--disk path=${rootfsCopy},readonly=on"
+          # image_type 显式声明：CH v52 起镜像类型自动检测已弃用
+          "--disk path=${rootfsCopy},readonly=on,image_type=qcow2"
           "--cpus boot=${toString cfg.vcpus},affinity=[0@[${toString cfg.cpu}]]"
           "--memory size=${toString cfg.mem}M"
           (lib.optionalString (cfg.initialBalloonMem > 0)
