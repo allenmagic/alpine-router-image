@@ -1,4 +1,4 @@
-name: microvm-router-build
+name: router-image-build
 
 # 手动触发：构建自建内核（与发行版无关，独立作业）+ 按发行版矩阵并行构建
 # rootfs（musl-openrc 双发行版链）+ 装配可启动 VM 镜像
@@ -6,28 +6,24 @@ name: microvm-router-build
 #
 # 作业顺序：kernel → build（fan-in 内核的模块元数据）→ release
 #
-# 产物（tag: microvm-router-vm-YYYYMMDD）：
-#   <distro>-rootfs.qcow2        VM 根磁盘。同时携带 modloop 模块闭包（alpine
-#                                变体用）与自建内核的模块元数据（custom 变体用），
-#                                两者目录名为各自内核版本串，互不干扰
-#   vmlinuz-virt / initrd        alpine 变体：官方内核 + 注入 ext4 依赖链的 initrd
-#   vmlinuz-router               custom 变体：自建内核（4.0M，引导链全 builtin）
-#   initramfs-empty.cpio         custom 变体：512 字节未压缩空 cpio 占位（microvm.nix
-#                                的 runner 无条件传 --initramfs，声明侧无法不传）
+# 产物（tag: router-vm-YYYYMMDD）：
+#   vmlinuz-router               自建内核（引导链全 builtin、无 initramfs，
+#                                cloud-hypervisor 直接 --kernel 引导）
+#   <distro>-rootfs.qcow2        VM 根磁盘（ro 挂载，guest 完全无状态）
 #   config-router                自建内核的 .config（供查阅与复现，消费端不 fetch）
 #   SHA256SUMS                   消费端 fetchurl 的 sha256 来源（多发行版条目）
 #
 # 内核与 rootfs 由同一 tag 一起发布、同批次绑定：内核 bump 必然重建配套 rootfs
-# （元数据目录名随 uname -r 变化），故二者不解耦。
+# （模块元数据目录名随 uname -r 变化），故二者不解耦。
 #
-# 注：不使用 CI secrets 注入密钥——密钥由 NAS 宿主的 alpine-router-deploy
-# 在部署时注入，绝不进入公开 release 产物。
+# 注：不使用 CI secrets 注入密钥——密钥由宿主 sops-nix 管理、router-vm-deploy
+# 在部署时注入 guest /run，绝不进入公开 release 产物。
 
 on:
   workflow_dispatch:
     inputs:
       distro:
-        description: "rootfs 发行版（三件套与 initrd 为发行版无关的共享资产）"
+        description: "rootfs 发行版（vmlinuz-router 为发行版无关的共享资产）"
         type: choice
         required: true
         default: alpine
@@ -60,8 +56,8 @@ jobs:
           INCLUDE="${INCLUDE%,}]"
           echo "matrix={\"include\":${INCLUDE}}" >> "$GITHUB_OUTPUT"
 
-  # 自建内核（router.nix 的 kernel = "custom"）。与发行版无关，故独立成一个
-  # 作业而不进 distro 矩阵——否则 alpine/gentoo 会各编一遍同样的内核。
+  # 自建内核（消费端唯一内核）。与发行版无关，故独立成一个作业而不进
+  # distro 矩阵——否则 alpine/gentoo 会各编一遍同样的内核。
   # 产物被下面的 build 作业 fan-in（注入 rootfs 的模块元数据）并进 release。
   kernel:
     runs-on: ubuntu-24.04
@@ -179,8 +175,8 @@ jobs:
           merge-multiple: true
           pattern: vm-image-*-${{ github.run_id }}
 
-      # 自建内核资产（custom 变体）。放在独立目录再挑文件进 dist：内核 artifact
-      # 里还有 modules/ 元数据树（已注入 rootfs，不单独发布）与 vmlinux-router
+      # 自建内核资产。放在独立目录再挑文件进 dist：内核 artifact 里还有
+      # modules/ 元数据树（已注入 rootfs，不单独发布）与 vmlinux-router
       # （当前 CH 走 bzImage 路径不消费它，是将来切 PVH 的后路，不发布）。
       - name: Download kernel artifact
         uses: actions/download-artifact@v8
@@ -191,8 +187,8 @@ jobs:
       - name: Merge SHA256SUMS
         run: |
           set -euo pipefail
-          cp kout/vmlinuz-router kout/initramfs-empty.cpio kout/config-router dist/
-          # 内核的 SHA256SUMS 只覆盖它自己的三个产物，与发行版的条目一起排序合并
+          cp kout/vmlinuz-router kout/config-router dist/
+          # 内核的 SHA256SUMS 只覆盖它自己的两个产物，与发行版的条目一起排序合并
           sort -k2 dist/SHA256SUMS.* kout/SHA256SUMS > dist/SHA256SUMS
           rm dist/SHA256SUMS.*
           echo "=== 汇总资产 ==="
@@ -202,7 +198,7 @@ jobs:
 
       - name: Resolve tag
         id: tag
-        run: echo "tag=microvm-router-vm-$(date +%Y%m%d)" >> "$GITHUB_OUTPUT"
+        run: echo "tag=router-vm-$(date +%Y%m%d)" >> "$GITHUB_OUTPUT"
 
       - name: Create / Update Release
         uses: softprops/action-gh-release@v3
@@ -210,10 +206,7 @@ jobs:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: ${{ steps.tag.outputs.tag }}
           files: |
-            dist/vmlinuz-virt
-            dist/initrd
             dist/vmlinuz-router
-            dist/initramfs-empty.cpio
             dist/config-router
             dist/*-rootfs.qcow2
             dist/SHA256SUMS
@@ -223,20 +216,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # release 资产就位后，把 tag+sha256 同步进 nixos-modules/router.nix 并提交
-      # （消费端升级只需 nix flake update）。幂等：同日重跑值不变则跳过提交。
-      # push 不会循环触发本 workflow（仅 workflow_dispatch）。
+      # release 资产就位后，把 tag+sha256 同步进 nixos-modules/router-vm.nix
+      # 并提交（消费端升级只需 nix flake update）。幂等：同日重跑值不变则跳过
+      # 提交。push 不会循环触发本 workflow（仅 workflow_dispatch）。
       - name: Sync flake checksums
         run: |
           set -euo pipefail
           python3 image/sync-flake-sha.py \
-            dist/SHA256SUMS nixos-modules/router.nix "${{ steps.tag.outputs.tag }}"
+            dist/SHA256SUMS nixos-modules/router-vm.nix "${{ steps.tag.outputs.tag }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           if git diff --quiet; then
             echo "sha256 无变化（同日重复构建），跳过提交"
           else
-            git add nixos-modules/router.nix
+            git add nixos-modules/router-vm.nix
             git commit -m "ci: sync release checksums to ${{ steps.tag.outputs.tag }}"
             # 同日多次触发时远端可能有上一次的 sync 提交——rebase 后推送；
             # 冲突（同日两次构建的 sha256 不一致）时放弃推送，sync 失败不阻塞 job
