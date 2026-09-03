@@ -119,6 +119,9 @@ bash test/smoke-test.sh alpine --proxy
 
 # 自定义内核日志级别（3 = 只显示严重错误）
 bash test/smoke-test.sh alpine --loglevel 3
+
+# 本地刚构建的内核直通（跳过 release 内核的下载与 sha256 校验）
+bash test/smoke-test.sh alpine --local-kernel kernel/out/vmlinuz-router --backend cloud-hypervisor --assert
 ```
 
 ## VM 内操作

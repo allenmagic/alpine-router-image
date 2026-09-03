@@ -101,9 +101,13 @@ release 上传（tag `router-vm-YYYYMMDD`，资产 vmlinuz-router +
 
 ```bash
 # 冒烟测试：两条路径（详见 test/smoke-test.sh 头部说明）
-bash test/smoke-test.sh alpine                                   # qemu 交互（串口直连）
+bash test/smoke-test.sh alpine                                   # qemu 交互（串口直连；退出 Ctrl-A X）
 bash test/smoke-test.sh alpine --backend cloud-hypervisor --assert  # CH 非交互断言（与生产同参数）
 bash test/smoke-test.sh alpine --verify-only                     # 只下载+校验
+# 本地刚构建的内核直通（跳过 release 内核下载校验；见 kernel/README.md）
+bash test/smoke-test.sh alpine --local-kernel kernel/out/vmlinuz-router --assert
+# CH 交互模式的退出（另开终端；guest 内 poweroff/halt 在 CH 下退不出 VMM）：
+#   ch-remote --api-socket /tmp/router-vm-smoke.sock shutdown-vmm
 
 # 真实网络环境测试（tap + 桥 + 上游网卡，需要 root）
 sudo test/cloud-hypervisor-env.sh --uplink <网卡>

@@ -66,6 +66,12 @@ test/smoke-test.sh alpine --local-kernel kernel/out/vmlinuz-router --backend clo
 `sync-flake-sha.py` 的锚定正则也会失配。版本可从 config-router 内容与
 guest 的 `uname -r` 查得，rootfs 里的 `/lib/modules/<版本串>` 也仍带版本。
 
+版本串命名：`config.fragment` 的 `CONFIG_LOCALVERSION="-dange-router-vm"`
+（仿 WSL 的 `-microsoft-standard-WSL2`），guest 内 `uname -r` 显示
+`6.18.48-dange-router-vm`。改名只动这一行（前导连字符必须自写）；
+KVER bump 不影响命名。模块元数据目录 `/lib/modules/<KREL>` 随
+`make kernelrelease` 自动跟随。
+
 ## 版本策略：只跟最新 LTS
 
 路由器的失败模式是「跑着突然断网」，不是「缺某个新特性」。LTS 只收 backport
