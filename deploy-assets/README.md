@@ -33,7 +33,8 @@ systemctl status router-vm-deploy
 - `SSH_PUBLIC_KEY` → `/root/.ssh/authorized_keys`（deploy 通道本身与日常登录；
   **支持多个 key**：每行一个公钥，如部署机 key + 个人设备 key）
 - `TAILSCALE_AUTH_KEY` → `/etc/tailscale/authkey`（config.json 通过
-  `authKey: file:` 引用；登录由操作者手动 `tailscale up` 触发）
+  `authKey: file:` 引用；注入后自动启动 tailscaled 并后台 `tailscale up`
+  登录，key 须为「可复用 reusable」类型）
 - `CLOUDFLARED_TOKEN` → `/etc/cloudflared/config.yml`（注入后自动重启服务）
 
 install.sh 结束（含失败）时删除 env 文件。不提供密钥则跳过对应功能。
@@ -68,7 +69,7 @@ sudo ROUTER_VM_ENV_FILE=/tmp/router-vm.env router-vm-deploy
 | 项 | 位置 | 说明 |
 |---|---|---|
 | `ssh-public-key` | 宿主 sops secrets.yaml | `ssh-keygen -t ed25519` 生成后填入 |
-| `tailscale-auth-key` | 同上 | Tailscale 管理后台生成一次性 key |
+| `tailscale-auth-key` | 同上 | Tailscale 管理后台生成可复用（reusable）key |
 | `cloudflared-token` | 同上 | Cloudflare Zero Trust 隧道页获取 |
 
 镜像 tag 与资产 sha256 无需手工替换——由 CI 的 `sync-flake-sha.py` 自动同步。

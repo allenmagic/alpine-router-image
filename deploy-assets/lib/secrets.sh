@@ -6,9 +6,9 @@
 #
 #   密钥来自环境变量（由 env 文件加载，见 env.example），
 #   绝不写入部署包或日志。
-#   登录类应用（tailscale up）由操作者手动执行：authkey 经 config.json
-#   的 file: 机制被 tailscaled 启动时读取，手动 `tailscale up`
-#   只触发登录、不需要再传 key。
+#   Tailscale 登录自动触发：authkey 经 config.json 的 file: 机制被
+#   tailscaled 启动时读取，本脚本注入后自动启动 tailscaled 并后台执行
+#   `tailscale up`，无需再传 key（approve/auto-approve 在 Tailscale admin 侧）。
 #
 #   注入路径说明（guest 无状态架构）：/root/.ssh、/etc/cloudflared、
 #   /etc/tailscale/authkey 均为构建期烙入的符号链接 → /run（tmpfs），
@@ -32,12 +32,21 @@ inject_secrets() {
         echo "  → 未提供 SSH_PUBLIC_KEY，跳过"
     fi
 
-    # Tailscale: authkey 写入 /etc/tailscale/authkey（config.json 引用）
+    # Tailscale: authkey 写入 /etc/tailscale/authkey（config.json 引用），
+    # 随后启动 tailscaled 并后台自动登录（tailscale up）。
+    # 注意：guest 无状态，每次重启都是「新节点」重新注册，key 必须是可复用
+    # （reusable）类型；建议勾选 Ephemeral，让离线旧节点自动移除。tailscale up
+    # 在设备审批制下会阻塞等 approve，故放后台（nohup）不卡 deploy；日志落
+    # /run/tailscale/up.log（tmpfs，随重启清空）。
     if [ -n "${TAILSCALE_AUTH_KEY:-}" ]; then
         mkdir -p /etc/tailscale
         printf '%s' "${TAILSCALE_AUTH_KEY}" > /etc/tailscale/authkey
         chmod 600 /etc/tailscale/authkey
-        echo "  → Tailscale authkey 已注入（登录请手动执行: tailscale up）"
+        rc-service tailscale start 2>/dev/null || true
+        mkdir -p /run/tailscale
+        nohup sh -c 'for _i in 1 2 3 4 5 6; do sleep 2; tailscale up && exit 0; done' \
+            >/run/tailscale/up.log 2>&1 &
+        echo "  → Tailscale authkey 已注入，自动登录（tailscale up 后台执行）"
     else
         echo "  → 未提供 TAILSCALE_AUTH_KEY，跳过"
     fi

@@ -32,8 +32,8 @@ trap 'rm -f "${SCRIPT_DIR}/env"' EXIT
 
 echo "[install] 开始密钥注入..."
 
-# ---- 密钥注入（登录类应用由操作者手动启动，见 README）----
+# ---- 密钥注入（Tailscale 自动登录，见 README）----
 . "${LIB_DIR}/secrets.sh"
 inject_secrets
 
-echo "[install] 完成。Tailscale 登录请手动执行: ssh root@<VM_IP> 'tailscale up'"
+echo "[install] 完成。Tailscale 已自动触发登录（approve 在 admin 侧处理）"

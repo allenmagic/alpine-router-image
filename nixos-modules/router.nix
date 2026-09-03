@@ -122,7 +122,7 @@ let
         sleep 5
     done
     [ "$_rc" = 0 ] || { echo "错误: 密钥注入失败" >&2; exit 1; }
-    echo "部署完成。Tailscale 登录请手动执行: router-vm-shell 'tailscale up'"
+    echo "部署完成。Tailscale 已自动触发登录（approve/auto-approve 在 admin 侧处理）"
   '';
 in
 

@@ -77,6 +77,33 @@ else
     bad "lo 处于 DOWN —— loopback 服务未注册进 boot runlevel"
 fi
 
+head_ "deploy 就绪（密钥注入前置）"
+# sshd 是 deploy 的 scp/ssh 通道（root/root 密码 + 注入公钥后的免密登录）；
+# 三符号链接把标准路径指向 /run（tmpfs），deploy 写标准路径即落 tmpfs。
+if pgrep sshd >/dev/null 2>&1; then
+    ok "sshd 进程运行中"
+else
+    bad "sshd 未运行（deploy 的 scp/ssh 通道会失败）"
+fi
+if [ -f /run/ssh/ssh_host_ed25519_key ]; then
+    ok "host key 已生成（/run/ssh，sshd-keys 服务）"
+else
+    bad "缺 /run/ssh host key（sshd-keys 未跑，sshd 无法接受连接）"
+fi
+_symlink_ok() {
+    if [ -L "$1" ] && [ "$(readlink "$1")" = "$2" ]; then
+        ok "$3：$1 -> $2"
+    else
+        bad "$3：$1 未指向 $2（deploy 写不进 /run）"
+    fi
+}
+_symlink_ok /root/.ssh             /run/ssh              "SSH authorized_keys"
+_symlink_ok /etc/cloudflared       /run/cloudflared      "Cloudflared config"
+_symlink_ok /etc/tailscale/authkey /run/tailscale/authkey "Tailscale authkey"
+for _d in ssh tailscale cloudflared; do
+    [ -d "/run/$_d" ] && ok "/run/$_d 目录存在（run-state）" || bad "缺 /run/$_d（run-state 未建）"
+done
+
 head_ "服务状态"
 CRASHED="$(rc-status --crashed 2>/dev/null)"
 [ -z "$CRASHED" ] && ok "无崩溃服务" || bad "崩溃服务: $CRASHED"
