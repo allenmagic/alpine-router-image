@@ -18,13 +18,14 @@
 # 选项:
 #   --tag TAG         release tag（默认自动探测最新 router-vm-* 前缀）
 #   --backend NAME    qemu | cloud-hypervisor（默认 qemu）
-#   --assert          qemu：tee 启动日志并断言；CH：非交互断言
-#                     （后台启动 + --serial file 落盘日志 + 轮询 login:
-#                      或超时 + 强制清理）。断言项：FATAL: Module /
-#                     Function not implemented / hwclock: / Kernel panic
-#                     / 未到达 login 一律视为失败（内核能启动 ≠ 能力完整；
-#                     openrc 的 modules 服务结构上无法失败，日志是唯一
-#                     能拦住静默丢失的地方）
+#   --assert          非交互断言：后台启动 + 日志落盘 + 轮询 login: 或超时
+#                     + 强制清理（qemu：-nographic 串口重定向落日志；
+#                     CH：--serial file 落日志）。断言项：FATAL: Module /
+#                     Function not implemented / hwclock:（仅 qemu，CH 无
+#                     CMOS RTC 属预期）/ Kernel panic / Read-only file
+#                     system / 未到达 login 一律视为失败（内核能启动 ≠
+#                     能力完整；openrc 的 modules 服务结构上无法失败，
+#                     日志是唯一能拦住静默丢失的地方）
 #   --assets-dir DIR  资产缓存目录（默认 <仓库>/build/smoke-assets，已被 .gitignore 忽略）
 #   --no-download     跳过下载，只用缓存里已有的文件
 #   --force-download  无条件重新下载（默认已会按 sha256 自动刷新过期缓存）
@@ -400,6 +401,41 @@ boot_ch_assert() {
     return 1
 }
 
+# qemu 路径的 --assert：后台运行（-nographic 串口走 stdio，重定向落日志），
+# 轮询 login: 或超时（90s）/提前退出后强制清理。交互验证归无 --assert 的
+# 串口直连模式。
+boot_qemu_assert() {
+    local distro="$1" blog="$2"
+    command -v qemu-system-x86_64 >/dev/null 2>&1 || \
+        die "未找到 qemu-system-x86_64（Arch: sudo pacman -S qemu-base）"
+    log "qemu 后台启动 ${distro}（-nographic 串口落日志）"
+    qemu-system-x86_64 -m 512 -smp 2 \
+        -kernel "$(_kernel_path)" \
+        -append "$KCMD" \
+        -drive "file=${ASSETS_DIR}/${distro}-rootfs.qcow2,format=qcow2,if=virtio,readonly=on" \
+        -netdev user,id=wan -device virtio-net-pci,netdev=wan,mac=02:00:00:01:00:01 \
+        -netdev user,id=lan -device virtio-net-pci,netdev=lan,mac=02:00:00:01:00:02 \
+        -nographic > "$blog" 2>&1 &
+    local qpid=$!
+
+    local deadline=$(( $(date +%s) + 90 ))
+    local reached=0
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+        if grep -aq 'login:' "$blog" 2>/dev/null; then reached=1; break; fi
+        kill -0 "$qpid" 2>/dev/null || break
+        sleep 2
+    done
+
+    kill "$qpid" 2>/dev/null || true
+    wait "$qpid" 2>/dev/null || true
+    if [ "$reached" = 1 ]; then
+        log "${distro} 到达 login（${blog#$REPO_ROOT/}）"
+        return 0
+    fi
+    log "${distro} 未到达 login（超时或提前退出，日志见 ${blog#$REPO_ROOT/}）"
+    return 1
+}
+
 # ------------------------------------------------------------
 # 主流程
 # ------------------------------------------------------------
@@ -428,13 +464,12 @@ main() {
                 boot_ch_assert "$d" "$blog"
                 local rc=$?
             else
-                # qemu 断言：后台运行（-nographic 串口走 stdio），60 秒超时自动终止
-                timeout 60s "$BOOT_FN" "$d" > "$blog" 2>&1
+                # qemu 断言：后台 + 重定向落日志，到达 login 即停
+                boot_qemu_assert "$d" "$blog"
                 local rc=$?
-                # timeout 返回 124 表示超时（通常是到了 login 提示），算成功
-                [ "$rc" -eq 124 ] && rc=0
             fi
         else
+            # 交互模式：函数直接调用（不能经外部命令包装，timeout 会失去函数可见性）
             "$BOOT_FN" "$d"
             local rc=$?
         fi
