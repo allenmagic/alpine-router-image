@@ -43,7 +43,7 @@ jobs:
           nix eval .#nixosConfigurations.test-nixos-host.config.systemd.services.router-vm-deploy.partOf
           echo "=== 网络（tap → 宿主桥）==="
           nix eval .#nixosConfigurations.test-nixos-host.config.systemd.network.networks \
-            --apply 'builtins.mapAttrs (n: v: { name = v.matchConfig.Name; bridge = v.networkConfig.Bridge; })'
+            --apply 'x: builtins.mapAttrs (n: v: { name = v.matchConfig.Name; bridge = v.networkConfig.Bridge; }) (builtins.filterAttrs (n: v: builtins.match "50-router-.*" n != null) x)'
 
       - name: Build test-nixos-host (dry-run)
         run: |
