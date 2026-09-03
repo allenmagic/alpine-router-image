@@ -18,6 +18,8 @@
 # 选项:
 #   --tag TAG         release tag（默认自动探测最新 router-vm-* 前缀）
 #   --backend NAME    qemu | cloud-hypervisor（默认 qemu）
+#   --local-kernel PATH  用本地内核替代 release 的 vmlinuz-router（跳过它的
+#                     下载与校验；测 kernel/build.sh 刚构建、尚未发布的产物）
 #   --assert          非交互断言：后台启动 + 日志落盘 + 轮询 login: 或超时
 #                     + 强制清理（qemu：-nographic 串口重定向落日志；
 #                     CH：--serial file 落日志）。断言项：FATAL: Module /
@@ -62,6 +64,7 @@ LOGLEVEL=""      # 空 = 不追加 loglevel；如 --loglevel 3
 PROXY_MODE="auto"   # auto | on | off（下载是否走 proxychains）
 PROXY=""            # 实际前缀命令（resolve 后，空 = 直连）
 DISTRO=""
+LOCAL_KERNEL=""     # --local-kernel PATH：本地内核直通（跳过 release 内核的下载校验）
 ASSERT=0            # --assert：捕获启动日志并断言（无 FATAL/ENOSYS/panic 等）
 
 usage() {
@@ -85,6 +88,7 @@ while [ $# -gt 0 ]; do
         --force-download) FORCE_DOWNLOAD=1; shift ;;
         --verify-only) VERIFY_ONLY=1; shift ;;
         --loglevel)    LOGLEVEL="${2:?--loglevel 需要值(0-7)}"; shift 2 ;;
+        --local-kernel) LOCAL_KERNEL="${2:?--local-kernel 需要值(路径)}"; shift 2 ;;
         --assert)      ASSERT=1; shift ;;
         --proxy)       PROXY_MODE="on"; shift ;;
         --no-proxy)    PROXY_MODE="off"; shift ;;
@@ -177,6 +181,7 @@ if [ -z "$TAG" ]; then
 fi
 BASE="https://github.com/${REPO_SLUG}/releases/download/${TAG}"
 log "release: ${TAG}（${BASE}）"
+[ -n "$LOCAL_KERNEL" ] && log "本地内核: ${LOCAL_KERNEL}（跳过 release 内核下载与校验；如本地内核带 LOCALVERSION，与 release rootfs 的 /lib/modules 版本串不一致属预期——全 builtin 无运行时影响，verify-guest.sh 会提示）"
 
 # ------------------------------------------------------------
 # 下载与校验
@@ -200,10 +205,11 @@ _is_current() {
     awk -v n="$f" -v h="$h" '$2==n && $1==h {found=1} END{exit !found}' "$SUMS"
 }
 
-# 本次真正要用到的 release 资产（两件套：内核 + rootfs）
+# 本次真正要用到的 release 资产（两件套：内核 + rootfs）。
+# --local-kernel 时内核不下载不校验（本地产物无对应 release 条目）
 _asset_list() {
     local distro="$1"
-    printf '%s\n' "vmlinuz-router"
+    [ -n "$LOCAL_KERNEL" ] || printf '%s\n' "vmlinuz-router"
     printf '%s-rootfs.qcow2\n' "$distro"
 }
 
@@ -245,7 +251,13 @@ download() {
 # ------------------------------------------------------------
 # 启动（前台，串口直连）
 # ------------------------------------------------------------
-_kernel_path() { printf '%s' "${ASSETS_DIR}/vmlinuz-router"; }
+_kernel_path() {
+    if [ -n "$LOCAL_KERNEL" ]; then
+        printf '%s' "$LOCAL_KERNEL"
+    else
+        printf '%s' "${ASSETS_DIR}/vmlinuz-router"
+    fi
+}
 
 # ------------------------------------------------------------
 # 启动日志断言

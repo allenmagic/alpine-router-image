@@ -41,12 +41,15 @@ JOBS=8 ./kernel/build.sh           # 覆盖并行度
 ```
 
 本地启动测试（smoke-test 从 release 下载校验同一资产，测的就是消费端
-实际会拿到的东西；本地刚构建、尚未发布的 `kernel/out/vmlinuz-router`
-可临时手工 qemu/CH 直启）：
+实际会拿到的东西；本地刚构建、尚未发布的 `kernel/out/vmlinuz-router` 用
+`--local-kernel` 直通，跳过 release 内核的下载与校验）：
 
 ```bash
 test/smoke-test.sh alpine                                   # qemu 交互
 test/smoke-test.sh alpine --backend cloud-hypervisor --assert  # CH 非交互断言
+# 本地内核直通（注意：release rootfs 的 /lib/modules 版本串可能不含本地
+# 内核的 LOCALVERSION 后缀，全 builtin 无运行时影响，verify-guest.sh 会提示）
+test/smoke-test.sh alpine --local-kernel kernel/out/vmlinuz-router --backend cloud-hypervisor --assert
 ```
 
 ## 产物
