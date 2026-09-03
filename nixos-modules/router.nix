@@ -160,13 +160,13 @@ in
 
     mem = lib.mkOption {
       type = lib.types.ints.positive;
-      default = 512;
+      default = 256;
       description = "guest 内存上限（MB）";
     };
 
     initialBalloonMem = lib.mkOption {
       type = lib.types.ints.unsigned;
-      default = 256;
+      default = 128;
       description = ''
         初始 balloon 大小（MB，CH 要求 128M 对齐）；宿主 OOM 时自动放气归还。
         0 = 禁用 balloon。
