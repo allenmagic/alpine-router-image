@@ -47,6 +47,16 @@ enable_router_services() {
           "${TARGET_ROOTFS}/etc/runlevels/default/keymaps" \
           "${TARGET_ROOTFS}/etc/runlevels/default/save-keymaps" 2>/dev/null || true
 
+    # ro 无状态 guest 下禁用（stage3 默认启用）：
+    # - systemd-tmpfiles-setup(-dev)：运行期 tmpfiles 与「构建期烙入的
+    #   符号链接」ro 架构冲突（L 类型先 unlink 再建，ro 上必然 EROFS 报错）；
+    #   镜像已预烤，运行期无需
+    # - seedrng：无状态 guest 无持久化熵池可存；virtio-rng
+    #   （CONFIG_HW_RANDOM_VIRTIO）已提供熵源
+    rm -f "${TARGET_ROOTFS}/etc/runlevels/boot/systemd-tmpfiles-setup" \
+          "${TARGET_ROOTFS}/etc/runlevels/sysinit/systemd-tmpfiles-setup-dev" \
+          "${TARGET_ROOTFS}/etc/runlevels/boot/seedrng" 2>/dev/null || true
+
     echo "[service] === 服务启用完成 ==="
 }
 

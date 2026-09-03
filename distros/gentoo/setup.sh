@@ -433,6 +433,14 @@ if [ -f "${TARGET_ROOTFS}/etc/udhcpc/udhcpc.conf" ]; then
         || echo 'RESOLV_CONF=/run/resolv.conf' >> "${TARGET_ROOTFS}/etc/udhcpc/udhcpc.conf"
 fi
 
+# fstab：/ 显式声明 ro。stage3 默认 fstab 的 /dev/ROOT 条目带 rw 语义，
+# openrc 的 root 服务会按它把 / remount 成 rw —— CH 生产（readonly=on）
+# 下 remount 失败、保持 ro，但 qemu 无 readonly 盘时验证失真（曾因此漏掉
+# 整批 EROFS 写点问题）。显式 ro 后 openrc remount 为 no-op，两种后端一致。
+cat > "${TARGET_ROOTFS}/etc/fstab" <<'FSTAB'
+/dev/vda	/	ext4	ro,noatime	0 1
+FSTAB
+
 # ============================================================
 #  4. 系统设置（在目标 rootfs 内配置）
 # ============================================================
@@ -533,6 +541,19 @@ _link_state_dir /var/lib/chrony     chrony
 _link_state_dir /var/log            log
 _link_state_dir /var/tmp            tmp
 _link_state_dir /root/.ssh          ssh
+# /var/run：stage3 里是真实目录，bootmisc 启动时尝试迁移内容并 rm（ro 上
+# 报 EROFS）——构建期烙成符号链接后 bootmisc 检测 -L 直接跳过
+rm -rf "${TARGET_ROOTFS}/var/run"
+ln -s /run "${TARGET_ROOTFS}/var/run"
+echo "[setup]   /var/run -> /run"
+# openrc 运行期 depcache：rc 二进制每次启动确保 /var/cache/rc 存在
+# （ro 上 mkdir 报 EROFS）；链接到 /run/rc（run-state 的 RUN_DIRS 有 rc）
+_link_state_dir /var/cache/rc       rc
+# tmpfiles.d 声明的目录（systemd-tmpfiles-setup 已禁用，构建期补齐；
+# /var/spool 含 crond 需要的 cron 子目录）
+mkdir -p "${TARGET_ROOTFS}/srv" \
+         "${TARGET_ROOTFS}/var/spool/cron/crontabs" \
+         "${TARGET_ROOTFS}/var/spool/cron/atjobs"
 # /etc/tailscale 整体不能链接（config.json 是构建期配置，留在镜像内），
 # 只链接运行期注入的 authkey 文件
 rm -f "${TARGET_ROOTFS}/etc/tailscale/authkey"

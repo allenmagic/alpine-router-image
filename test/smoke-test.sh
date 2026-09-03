@@ -103,11 +103,18 @@ esac
 
 mkdir -p "$ASSETS_DIR"
 
-# cloud-hypervisor 需要 root/KVM 权限。提前获取凭证，避免后续卡在密码提示
+# cloud-hypervisor 需要 /dev/kvm：对当前用户可写则免 root，否则预取 sudo
+# 凭证（避免后续卡在密码提示）
+CH_PREFIX=""
 if [ "$BACKEND" = "cloud-hypervisor" ]; then
-    if ! sudo -n true 2>/dev/null; then
-        log "cloud-hypervisor 需要 root 权限，请输入密码："
-        sudo -v || die "sudo 认证失败"
+    if [ -w /dev/kvm ]; then
+        log "/dev/kvm 可写，cloud-hypervisor 免 root 运行"
+    else
+        CH_PREFIX="sudo"
+        if ! sudo -n true 2>/dev/null; then
+            log "cloud-hypervisor 需要 root 权限，请输入密码："
+            sudo -v || die "sudo 认证失败"
+        fi
     fi
 fi
 
@@ -303,12 +310,13 @@ boot_qemu() {
     local distro="$1"
     command -v qemu-system-x86_64 >/dev/null 2>&1 || \
         die "未找到 qemu-system-x86_64（Arch: sudo pacman -S qemu-base）"
-    log "qemu 启动 ${distro}（串口直连 ttyS0；退出按 Ctrl-A 然后 X）"
+    log "qemu 启动 ${distro}（ro 根盘与生产同参；串口直连 ttyS0；退出按 Ctrl-A 然后 X）"
+    # readonly=on 与生产 --disk readonly=on 对齐：否则 openrc root 服务会按
+    # fstab 把 / remount 成 rw，ro 验证失真且污染缓存镜像（替代旧 -snapshot）
     qemu-system-x86_64 -m 512 -smp 2 \
         -kernel "$(_kernel_path)" \
         -append "$KCMD" \
-        -snapshot \
-        -drive "file=${ASSETS_DIR}/${distro}-rootfs.qcow2,format=qcow2,if=virtio" \
+        -drive "file=${ASSETS_DIR}/${distro}-rootfs.qcow2,format=qcow2,if=virtio,readonly=on" \
         -netdev user,id=wan -device virtio-net-pci,netdev=wan,mac=02:00:00:01:00:01 \
         -netdev user,id=lan -device virtio-net-pci,netdev=lan,mac=02:00:00:01:00:02 \
         -nographic
@@ -327,7 +335,7 @@ boot_ch() {
     log "复制镜像到临时文件（避免污染缓存）..."
     cp "$img" "$scratch"
     log "cloud-hypervisor 启动 ${distro}（与生产同参数；串口直连 ttyS0；Ctrl+C 退出）"
-    sudo "$ch" \
+    $CH_PREFIX "$ch" \
         --kernel "$(_kernel_path)" \
         --cmdline "$KCMD" \
         --disk "path=$scratch,readonly=on,image_type=qcow2" \
@@ -353,8 +361,12 @@ boot_ch_assert() {
     local scratch; scratch="$(mktemp --suffix=.qcow2)" || die "创建临时镜像失败"
     cp "$img" "$scratch"
 
+    # 先清空日志：轮询以 login: 为终止条件，上次运行残留的旧日志会立即
+    # 命中造成假阳性（CH 随后 O_TRUNC 打开，日志被清空且未重新写入）
+    rm -f "$blog"
+
     log "cloud-hypervisor 后台启动 ${distro}（--serial file=${blog#$REPO_ROOT/}）"
-    sudo "$ch" \
+    $CH_PREFIX "$ch" \
         --kernel "$(_kernel_path)" \
         --cmdline "$KCMD" \
         --disk "path=$scratch,readonly=on,image_type=qcow2" \
@@ -376,7 +388,7 @@ boot_ch_assert() {
     done
 
     # 强制清理：kill CH 本体（sudo 进程被杀会遗留孤儿，用 scratch 路径精确定位）
-    sudo pkill -f "$scratch" 2>/dev/null || true
+    $CH_PREFIX pkill -f "$scratch" 2>/dev/null || true
     wait "$ch_pid" 2>/dev/null || true
     rm -f "$scratch"
 

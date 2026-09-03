@@ -6,3 +6,8 @@
 # 生成职责移交 base/init/openrc/sshd-keys 服务（在状态盘上生成，
 # HostKey 路径由 base/ssh/sshd_config.d/state-hostkeys.conf 指向状态盘）。
 sshd_disable_keygen="yes"
+# 双链通用补充：gentoo 的 sshd init 不认识 sshd_disable_keygen（Alpine
+# 变量），其 checkconfig() 无条件执行 ${SSHD_KEYGEN_BINARY} -A ——
+# 置为 true 使其空转（实测 -A 忽略 drop-in HostKey 直写 /etc/ssh，
+# ro 上报 EROFS）。Alpine 的 init 不引用本变量，不受影响。
+SSHD_KEYGEN_BINARY="/bin/true"

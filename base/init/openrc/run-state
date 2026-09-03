@@ -15,7 +15,8 @@ name=$RC_SVCNAME
 description="Prepare runtime state directories under /run"
 
 # 与 setup.sh 烙入的符号链接目标一一对应
-RUN_DIRS="tailscale cloudflared ssh misc chrony log tmp"
+# （rc 是 gentoo 链 openrc depcache 的 /var/cache/rc 目标）
+RUN_DIRS="tailscale cloudflared ssh misc chrony log tmp rc"
 
 depend() {
     before sshd sshd-keys chronyd busybox-ntpd dnsmasq tailscale cloudflared network-watchdog keepalived network
