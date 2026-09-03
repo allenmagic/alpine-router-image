@@ -14,6 +14,11 @@
 # ============================================================
 
 # ---------- 架构与基础 ----------
+# 版本命名：uname -r 显示 6.18.48-dange-router-vm（仿 WSL 的
+# -microsoft-standard-WSL2）。注意前导连字符：LOCALVERSION 直接拼接在
+# 版本串后，不含连字符会显示 6.18.48dange-router-vm。改内核版本（KVER）
+# 时无需动此行——LOCALVERSION 独立于版本号。
+CONFIG_LOCALVERSION="-dange-router-vm"
 CONFIG_64BIT=y
 CONFIG_SMP=y
 CONFIG_NR_CPUS=8
