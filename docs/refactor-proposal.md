@@ -1,7 +1,8 @@
 # 重构方案：剥离 microvm.nix，直接用 cloud-hypervisor 管理路由 VM
 
-> 状态：草案，待审阅
-> 日期：2026-09-01
+> 状态：**已实施**（2026-09-03，T1-T8 完成；宿主侧验收见 docs/verify-on-nixos.md，
+> 消费端迁移见 docs/migration-from-microvm.md）
+> 日期：2026-09-01（§3.3 于 2026-09-02 修订为 sops 方案）
 
 ## 1. 现状分析
 

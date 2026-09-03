@@ -1,11 +1,11 @@
 #!/bin/sh
 # ============================================================
-# Microvm Router 密钥注入脚本（VM 内以 root 执行）
+# Router VM 密钥注入脚本（VM 内以 root 执行）
 #
 # 配置不再经本脚本部署：全部配置已由 router-image 仓库的
 # CI 烙进镜像（出厂即正确），本脚本只负责注入密钥类数据。
 #
-# 通常由宿主机 `alpine-router-deploy` 调用：
+# 通常由宿主侧 `router-vm-deploy`（systemd 服务或手工命令）调用：
 #   上传 tarball（install.sh + lib/）→ 上传可选密钥 env 文件（重命名为 ./env）
 #   → 解包后执行本脚本，结束后自动删除 env 文件
 #

@@ -5,16 +5,45 @@ rootfs 构建链移植自
 [nanopi-r3s-rootfs](https://github.com/allenmagic/nanopi-r3s-rootfs)，
 并按 VM 场景收敛为 **x86_64 专用**（无跨架构/binfmt/qemu 机制），
 双发行版链（Alpine / Gentoo，均为 musl + OpenRC）；
-装配 Alpine 官方 virt 三件套，产出可启动的 VM 镜像 release asset。
+自建单一内核（引导链全 builtin、无 initramfs），产出两件套 release 资产。
+
+## 架构
+
+```
+NixOS 宿主
+├── services.router-vm（本仓库 nixosModules.router，cloud-hypervisor 直管）
+│   ├── router-vm.service        系统单元直接 ExecStart cloud-hypervisor
+│   │   ├── preStart             rootfs 只读副本（内容哈希路径）+ tap 创建
+│   │   ├── --disk readonly=on   guest rootfs 只读挂载
+│   │   ├── --balloon            宿主 OOM 自动放气（deflate_on_oom）
+│   │   ├── --api-socket         优雅关机（ExecStop=ch-remote shutdown-vmm）
+│   │   └── --serial file        串口落盘 /run/router-vm/console.log
+│   ├── router-vm-deploy.service 每次 VM 启动后：sops 密钥 scp 注入 guest /run
+│   └── systemd.network          tap → br-wan/br-lan 自动挂桥
+└── guest（ro rootfs，完全无状态）
+    ├── 构建期烙入的符号链接（/var/lib/tailscale、/etc/cloudflared、
+    │   /var/log、/root/.ssh … → /run tmpfs）
+    └── 重启即清空 → 宿主重新 deploy（幂等，操作者无感知）
+```
+
+- **不依赖 microvm.nix**：systemd 单元自管 tap/挂桥/balloon/关机，
+  flake 输入只剩 nixpkgs
+- **内核唯一**：`kernel/build.sh` 自建（跟最新 LTS，全 builtin），
+  无 initramfs、无 modloop；CVE 响应 = LTS bump（CI 按 KVER 自动重编）
+- **guest 无状态**：持久化数据（ssh key / tailscale authkey / cloudflared
+  token 等纯文本）由宿主 sops-nix 管理，deploy 时注入 /run；
+  镜像升级不丢状态（状态根本不在镜像里）
+- 设计决策与风险分析见 `docs/refactor-proposal.md`，实施计划见
+  `docs/refactor-plan.md`
 
 ## 仓库分工
 
 | 环节 | 位置 |
 |---|---|
-| rootfs 构建 + virt 三件套装配 → release | 本仓库 CI（`image/assemble.sh`） |
-| microvm 消费端声明（fetchurl/CH 参数/disk-prep/tap 挂桥） | 本仓库 `nixosModules.router` |
-| 密钥注入 | 本仓库 `deploy-assets/`（模块内打包为 deploy 资产；密钥经宿主 env 文件注入，600 权限不进 git/store） |
-| 包集（package.list） | 本仓库 `distros/{alpine,gentoo}/package.list`（双链各自维护，r3s 一次性拷贝后已按需分叉） |
+| 内核构建（vmlinuz-router，全 builtin） | `kernel/build.sh`（CI 独立作业） |
+| rootfs 构建 + 装配（两件套 release） | `distros/{alpine,gentoo}/` + `image/assemble.sh` |
+| 消费端声明（fetchurl/CH systemd 单元/tap 挂桥/deploy） | 本仓库 `nixosModules.router` |
+| 密钥注入 | 本仓库 `deploy-assets/`（模块内打包；密钥经宿主 sops-nix `/run/secrets` 注入，不进 git/store） |
 
 ## 消费端使用（flake 模块）
 
@@ -24,67 +53,79 @@ inputs.router-image.url = "github:allenmagic/router-image";
 
 # 宿主模块
 imports = [ inputs.router-image.nixosModules.router ];
-microvm.router = {
+services.router-vm = {
   enable = true;
 
   os = "alpine";           # 客户机发行版：alpine（默认）/ gentoo（均为 musl+OpenRC）
   cpu = 0;                 # isolcpus 独占核（默认 0；vcpu0 pin 到此核）
   vcpus = 2;               # vCPU 总数（默认 2：vcpu0 独占 + 其余动态调度）
   mem = 512;               # guest 内存上限 MB（默认 512）
-  initialBalloonMem = 256; # 初始 balloon MB，128M 对齐（默认 256）
+  initialBalloonMem = 256; # 初始 balloon MB，128M 对齐（默认 256；0=禁用）
 
   wanBridge = "br-wan";    # WAN 侧宿主桥（默认 br-wan）
   lanBridge = "br-lan";    # LAN 侧宿主桥（默认 br-lan）
+  vmIp = "192.168.10.1";   # VM LAN 口 IP（deploy 的 ssh 目标）
 
-  # 镜像资产默认从本仓库 release fetchurl（tag+sha256 模块内锁定）；
-  # 本地调试（如 CI 不可用）时覆盖：
-  # kernelFile  = /path/to/vmlinuz-virt;
-  # initrd      = /path/to/initrd;
-  # rootfsImage = /path/to/alpine-router-rootfs.qcow2;
+  secretsDir = "/run/secrets"; # sops-nix 解密落点（默认；三个密钥文件名见模块 option）
 };
 ```
 
-镜像 release 的 tag 与三处 sha256 硬编码在模块内（`nixos-modules/router.nix`），
+完整宿主示例（网桥 + sops 密钥 + 防火墙）：`example-host-config.nix`。
+镜像 release 的 tag 与资产 sha256 硬编码在模块内（`nixos-modules/router.nix`），
 **CI 出 release 后自动同步**（`image/sync-flake-sha.py`，幂等）——宿主升级只需
-`nix flake update`。
-
-镜像更新 → 状态盘路径（含内容哈希）变化 → CH 命令行变化 → VM 自动重启；
-旧镜像文件保留，宿主 rollback 直接复用。
+`nix flake update`。镜像更新 → rootfs 副本路径（含内容哈希）变化 →
+ExecStart 变化 → VM 自动重启；旧副本保留，宿主 rollback 直接复用。
 
 ## 构建流程（本地）
 
 ```bash
-# 1. 构建 rootfs（架构固定 x86_64，无需 ARCH 参数；双链二选一）
-sudo -E PACK=1 bash distros/alpine/build.sh    # 产物 build/alpine/alpine-rootfs-minimal.tar.xz
-sudo -E PACK=1 bash distros/gentoo/build.sh    # 产物 build/gentoo/gentoo-rootfs-minimal.tar.xz
+# 1. 构建内核（全 builtin，无 initramfs；产物 kernel/out/vmlinuz-router +
+#    config-router + modules 元数据树）
+./kernel/build.sh
 
-# 2. 装配 VM 镜像（下载官方三件套 + initrd 注入 ext4 + rootfs 装配 + qcow2；
-#    末尾参数为发行版，决定产物命名）
+# 2. 构建 rootfs（双链二选一；产物 build/<distro>/<distro>-rootfs-minimal.tar.xz）
+sudo -E PACK=1 bash distros/alpine/build.sh
+sudo -E PACK=1 bash distros/gentoo/build.sh
+
+# 3. 装配 VM 镜像（注入自建内核模块元数据 → mkfs.ext4 → qcow2）
 ./image/assemble.sh build/alpine/alpine-rootfs-minimal.tar.xz dist alpine
-# 产物：dist/{vmlinuz-virt, initrd, alpine-rootfs.qcow2, SHA256SUMS}
-# gentoo：./image/assemble.sh build/gentoo/gentoo-rootfs-minimal.tar.xz dist gentoo
+# 产物：dist/{alpine-rootfs.qcow2, SHA256SUMS}（内核资产在 kernel/out/）
 ```
 
-CI 手动触发后：构建 → release 上传（tag `microvm-router-vm-YYYYMMDD`）→
-自动同步 flake 模块 sha256 并推送。
+CI 手动触发（`.github/workflows/build-image.yml`）后：kernel → build →
+release 上传（tag `router-vm-YYYYMMDD`，资产 vmlinuz-router +
+`<distro>-rootfs.qcow2` + config-router + SHA256SUMS）→ 自动同步 flake
+模块 tag+sha256 并推送。
+
+## 测试
+
+```bash
+# 冒烟测试：两条路径（详见 test/smoke-test.sh 头部说明）
+bash test/smoke-test.sh alpine                                   # qemu 交互（串口直连）
+bash test/smoke-test.sh alpine --backend cloud-hypervisor --assert  # CH 非交互断言（与生产同参数）
+bash test/smoke-test.sh alpine --verify-only                     # 只下载+校验
+
+# 真实网络环境测试（tap + 桥 + 上游网卡，需要 root）
+sudo test/cloud-hypervisor-env.sh --uplink <网卡>
+```
+
+NixOS 宿主验收：`docs/verify-on-nixos.md`。
 
 ## 关键设计
 
 - **x86_64 专用**：ARCH 固定在构建脚本内；跨架构映射、binfmt 预检、qemu 注入
-  （`lib/arch-detect.sh`）已整体移除。
+  已整体移除。
 - **双发行版 musl-openrc**：alpine 与 gentoo 链共用 `base/` 配置体系
-  （init.d/conf.d/runlevels），消费端 `os` 选项切换；共享同一 virt 三件套与 initrd。
-- **串口控制台（ttyS0/115200）**：getty 常驻 ttyS0——网络故障时的最后恢复通道
-  （内核 boot/panic 日志亦输出至此），成本仅一个空闲进程，保留。
-- **三件套固定版本**：Alpine 3.24.1 netboot（vmlinuz-virt / initramfs-virt /
-  modloop-virt），URL+sha256 在 `image/assemble.sh` 顶部（升级 Alpine 版本时更新）。
-- **initrd 注入 ext4 依赖链**：netboot 版 initramfs 不含 ext4（root= 模式不挂
-  modloop，官方安装系统的 mkinitfs 会注入——此处为等效操作）；modprobe 读
-  `modules.dep.bin` 二进制索引，必须 depmod 重建。
-- **uid 0 属主**：CI runner 是 root 直接装配；本地非 root 时 assemble.sh 自动
-  fakeroot 包裹（镜像内 /var/empty 等归属错误会导致 sshd 拒启）。
-- **无密钥**：不使用 CI secrets——密钥由宿主 deploy 部署时注入（env 文件），
-  release 产物公开可下载，密钥绝不进入。
+  （init.d/conf.d/runlevels），消费端 `os` 选项切换。
+- **串口控制台（ttyS0/115200）**：getty 常驻 ttyS0，宿主侧落盘
+  `/run/router-vm/console.log`——网络故障时的最后恢复通道。
+- **ro rootfs + 构建期符号链接**：运行期无法在 ro 根上创建挂载点/链接，
+  全部可写路径（状态目录、/etc/mtab、/etc/resolv.conf、sshd host key）在
+  镜像构建期烙入指向 `/run`（tmpfs）；写点失控时的回退路线见
+  `docs/refactor-proposal.md` §5。
+- **无密钥进镜像/store**：不使用 CI secrets；密钥由宿主 sops-nix 解密到
+  `/run/secrets`，router-vm-deploy 每次 VM 启动后 scp 注入 guest /run
+  （guest 内 env 文件用后即删）。release 产物公开可下载，密钥绝不进入。
 - **配置权威源**：全部路由配置（nftables/dnsmasq/sysctl/服务脚本/网络参数）
   在本仓库 `base/` 与 `network.env`，CI 烙进镜像——出厂即正确；
   deploy 只做密钥注入。

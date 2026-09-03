@@ -94,7 +94,7 @@ setup_net() {
     ip link set "$UPLINK" master "$WAN_BRIDGE"
     log "网卡 $UPLINK → $WAN_BRIDGE"
 
-    # 创建 tap 并挂桥（与生产 microvm 一致：tap 先建、再挂桥）
+    # 创建 tap 并挂桥（与生产 router-vm 模块一致：tap 先建、再挂桥）
     ip tuntap add dev "$TAP_WAN" mode tap
     ip tuntap add dev "$TAP_LAN" mode tap
     ip link set "$TAP_WAN" master "$WAN_BRIDGE"

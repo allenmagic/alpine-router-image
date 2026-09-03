@@ -17,7 +17,7 @@ start() {
     # 预检：应用安装 + 配置完整（含非空 token）；不满足则跳过（stopped，不 crash）
     [ -x /usr/local/bin/cloudflared ] || { eerror "cloudflared 未安装"; return 1; }
     if ! grep -qE '^token:[[:space:]]*[^[:space:]]' /etc/cloudflared/config.yml 2>/dev/null; then
-        ewarn "未注入 Cloudflared token，跳过启动（等待 alpine-router-deploy 注入）"
+        ewarn "未注入 Cloudflared token，跳过启动（等待 router-vm-deploy 注入）"
         return 1
     fi
     ebegin "Starting cloudflared"

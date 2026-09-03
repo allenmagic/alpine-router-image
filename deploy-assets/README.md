@@ -1,6 +1,6 @@
-# Microvm Router 部署目录
+# Router VM 部署目录
 
-本目录是 Microvm Router VM 的**密钥注入器**（deploy 资产）。
+本目录是 Router VM 的**密钥注入器**（deploy 资产）。
 
 **职责边界**：VM 的全部配置（nftables/dnsmasq/sysctl/服务脚本/网络参数）已由
 [router-image](https://github.com/allenmagic/router-image) 仓库的 CI
@@ -9,52 +9,66 @@
 ## 目录结构
 
 ```
-alpine-router/
+deploy-assets/
 ├── lib/
 │   └── secrets.sh                # 密钥注入（SSH 公钥 / Tailscale / Cloudflared）
 ├── install.sh                    # 注入脚本（VM 内 root 执行，结束后清理 env）
-├── env.example                   # 部署密钥模板
+├── env.example                   # 部署密钥模板（手工部署用）
 └── README.md
 ```
 
-## 密钥注入（env 文件）
+## 密钥注入（sops-nix，自动）
 
-密钥通过 env 文件注入，**不写入部署包**：
+生产流程密钥由宿主 sops-nix 管理：加密进 git，激活时解密到
+`/run/secrets`，`router-vm-deploy`（systemd 服务）在**每次 VM 启动后**
+自动 scp 注入 guest 的 `/run`（tmpfs）：
 
 ```bash
-# 在 NAS 宿主机上
-sudo cp env.example /etc/libvirt/alpine-router.env
-sudo chmod 600 /etc/libvirt/alpine-router.env
-# 编辑填入密钥：
-#   SSH_PUBLIC_KEY="ssh-ed25519 AAAA..."（deploy 通道与日常登录）
-#   TAILSCALE_AUTH_KEY=tskey-auth-...
-#   CLOUDFLARED_TOKEN=eyJhIjoi...
+# 宿主侧：无需任何手工操作，VM 重启后密钥自动恢复
+systemctl status router-vm-deploy
 ```
 
-`alpine-router-deploy` 把该文件 scp 到 VM 并重命名为 `./env`，install.sh source 后：
+注入路径（guest 无状态，以下均为构建期烙入的符号链接 → `/run`）：
 
-- `SSH_PUBLIC_KEY` → `/root/.ssh/authorized_keys`（镜像出厂 sshd 默认拒绝 root 密码登录，公钥是唯一免密通道；**支持多个 key**：每行一个公钥，如部署机 key + 个人设备 key）
-- `TAILSCALE_AUTH_KEY` → `/etc/tailscale/authkey`（config.json 通过 `authKey: file:` 引用），随后自动 `tailscale up`
-- `CLOUDFLARED_TOKEN` → `/etc/cloudflared/config.yml`
+- `SSH_PUBLIC_KEY` → `/root/.ssh/authorized_keys`（deploy 通道本身与日常登录；
+  **支持多个 key**：每行一个公钥，如部署机 key + 个人设备 key）
+- `TAILSCALE_AUTH_KEY` → `/etc/tailscale/authkey`（config.json 通过
+  `authKey: file:` 引用；登录由操作者手动 `tailscale up` 触发）
+- `CLOUDFLARED_TOKEN` → `/etc/cloudflared/config.yml`（注入后自动重启服务）
 
 install.sh 结束（含失败）时删除 env 文件。不提供密钥则跳过对应功能。
+sops 密钥文件约定：`<secretsDir>/ssh-public-key`、
+`<secretsDir>/tailscale-auth-key`、`<secretsDir>/cloudflared-token`
+（默认目录 `/run/secrets`，见模块的 `secretsDir` option）。
+
+## 手工部署（调试/迁移场景）
+
+```bash
+# 宿主侧：传统 env 文件方式（sops 未接时）
+sudo cp /etc/router-vm/env.example /tmp/router-vm.env
+sudo chmod 600 /tmp/router-vm.env
+sudo vim /tmp/router-vm.env      # 填入密钥
+sudo ROUTER_VM_ENV_FILE=/tmp/router-vm.env router-vm-deploy
+```
 
 ## 更新配置
 
 **改配置**：改 [router-image](https://github.com/allenmagic/router-image)
 的 `base/` 或 `network.env` → 触发其 CI → CI 自动把 release 的 tag + sha256 同步进
-`nixos-modules/router.nix`（`sync-flake-sha.py`，无需手工）→ NAS 侧
-`nix flake update` → `nixos-rebuild switch` → 重启 VM（disk-prep 自动重装状态盘）→
-`alpine-router-deploy` 注入密钥。
+`nixos-modules/router.nix`（`sync-flake-sha.py`，无需手工）→ 宿主侧
+`nix flake update` → `nixos-rebuild switch` → VM 自动重启（rootfs 只读副本
+哈希路径变化）→ router-vm-deploy 自动重新注入密钥。
 
-**改密钥**：编辑 `/etc/libvirt/alpine-router.env` → `alpine-router-deploy`。
+**改密钥**：编辑宿主 sops 的 `secrets.yaml` → `nixos-rebuild switch`
+（sops 重新解密到 /run/secrets）→ 手动 `systemctl restart router-vm-deploy`
+（或重启 VM，deploy 服务随 VM 自动重跑）。
 
-## 部署前检查清单（占位项）
+## 部署前检查清单
 
-| 占位项 | 位置 | 替换方式 |
+| 项 | 位置 | 说明 |
 |---|---|---|
-| `SSH_PUBLIC_KEY` | `/etc/libvirt/alpine-router.env` | `ssh-keygen -t ed25519 -f /etc/libvirt/alpine-router-deploy` 后填 `.pub` 内容 |
-| `TAILSCALE_AUTH_KEY` | 同上 | Tailscale 管理后台生成一次性 key |
-| `CLOUDFLARED_TOKEN` | 同上 | Cloudflare Zero Trust 隧道页获取 |
+| `ssh-public-key` | 宿主 sops secrets.yaml | `ssh-keygen -t ed25519` 生成后填入 |
+| `tailscale-auth-key` | 同上 | Tailscale 管理后台生成一次性 key |
+| `cloudflared-token` | 同上 | Cloudflare Zero Trust 隧道页获取 |
 
-镜像 tag 与三处 sha256 无需手工替换——由 CI 的 `sync-flake-sha.py` 自动同步。
+镜像 tag 与资产 sha256 无需手工替换——由 CI 的 `sync-flake-sha.py` 自动同步。
