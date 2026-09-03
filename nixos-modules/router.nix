@@ -40,11 +40,11 @@ let
   osAssets = {
     alpine = {
       url = "${releaseBase}/alpine-rootfs.qcow2";
-      sha256 = "90d54de04eb0bbb927188869c3792392894dd3a71aac22c24db40998278decc1";
+      sha256 = "621496180ab2abda5876d5bcbc9398c176f84a1d8c833e51ab53118cbd178e67";
     };
     gentoo = {
       url = "${releaseBase}/gentoo-rootfs.qcow2";
-      sha256 = "729907560ab53f8cb88c47cf0d89103784de6799eacbd6d8af16dfd49c317994";
+      sha256 = "8fdc7a3d5b84df6641fd6b3b557e2c6058c5114abf35051b9a2ff7afc0f157d7";
     };
   };
 
@@ -53,7 +53,7 @@ let
   # （sync-flake-sha.py 自动完成），release tag 承担版本区分。
   kernel = {
     url = "${releaseBase}/vmlinuz-router";
-    sha256 = "96462132dcb765c0ee438d3b3a7e5438afab8c359a3e951885fc55558f54eba1";
+    sha256 = "cf8e6dfde6f38d882516042d6095bdd94a091929470b7ec823221dd0372a45a4";
   };
 
   kernelImage = pkgs.fetchurl kernel;
