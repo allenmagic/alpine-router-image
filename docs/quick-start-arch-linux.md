@@ -26,12 +26,13 @@ bash test/smoke-test.sh alpine --backend cloud-hypervisor --assert
 - ✅ 无需预先创建网络桥接
 - ✅ 自动下载并校验 sha256（资产两件套：vmlinuz-router + rootfs.qcow2）
 - ✅ 支持 qemu 和 cloud-hypervisor
-- ✅ 串口直接输出到终端，`Ctrl+C` 停止
+- ✅ 串口直接输出到终端
 
 **限制**：
 - 网络使用 user-mode（guest 可以访问外网，但宿主无法直接 ssh 进 guest——
-  guest 的 WAN 侧防火墙按路由器语义 drop 入站）
-- 需要手动停止（`Ctrl+C`）
+  guest 的 WAN 侧防火墙按路由器语义 drop 入站）；CH 路径则完全无网卡（纯 boot）
+- 退出方式：qemu 按 `Ctrl-A X`；CH 把终端置 raw 模式（Ctrl+C 会作为字节
+  发进 guest），需在 guest 内 `poweroff` 或另开终端 `pkill -f cloud-hypervisor`
 
 ### 方案 B：NixOS 宿主 + declarative 配置（生产环境）
 
@@ -139,7 +140,7 @@ nft list ruleset
 ping 8.8.8.8
 ```
 
-退出：`Ctrl+C`
+退出：qemu 按 `Ctrl-A X`；CH 路径登录后 `poweroff`（或另开终端 `pkill -f cloud-hypervisor`——CH 把终端置 raw 模式，Ctrl+C 只是发进 guest 的字节）
 
 ## 常见问题
 

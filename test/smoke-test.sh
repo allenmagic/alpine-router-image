@@ -335,7 +335,10 @@ boot_ch() {
     local scratch; scratch="$(mktemp --suffix=.qcow2)" || die "创建临时镜像失败"
     log "复制镜像到临时文件（避免污染缓存）..."
     cp "$img" "$scratch"
-    log "cloud-hypervisor 启动 ${distro}（与生产同参数；串口直连 ttyS0；Ctrl+C 退出）"
+    # 注：CH 把终端置 raw 模式透传串口输入，Ctrl+C 会作为字节发进 guest
+    # 而非 SIGINT 给 CH——退出方式：guest 内登录后 poweroff，或另开终端
+    # pkill -f cloud-hypervisor。交互验证首选 qemu 路径（Ctrl-A X 退出）。
+    log "cloud-hypervisor 启动 ${distro}（与生产同参数；串口直连 ttyS0；退出：guest 内 poweroff 或另开终端 pkill）"
     $CH_PREFIX "$ch" \
         --kernel "$(_kernel_path)" \
         --cmdline "$KCMD" \
@@ -475,7 +478,7 @@ main() {
         fi
         set -e
         log "${d} 退出（rc=$rc）"
-        [ "$rc" -eq 0 ] || log "提示: rc=$rc 可能是 qemu Ctrl-A X / CH Ctrl+C 的正常退出，非镜像问题。"
+        [ "$rc" -eq 0 ] || log "提示: rc=$rc 可能是 qemu Ctrl-A X / CH 侧 pkill 的正常退出，非镜像问题。"
 
         if [ "$ASSERT" = 1 ]; then
             set +e
