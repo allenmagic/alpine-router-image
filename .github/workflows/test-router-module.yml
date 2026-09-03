@@ -42,8 +42,10 @@ jobs:
           nix eval .#nixosConfigurations.test-nixos-host.config.systemd.services.router-vm-deploy.after
           nix eval .#nixosConfigurations.test-nixos-host.config.systemd.services.router-vm-deploy.partOf
           echo "=== 网络（tap → 宿主桥）==="
+          # 注意：builtins.filterAttrs 不存在（部分 nix 版本才有的扩展），
+          # 这里直接断言模块固定生成的两个 tap 条目（单 VM 设计，名字固定）
           nix eval .#nixosConfigurations.test-nixos-host.config.systemd.network.networks \
-            --apply 'x: builtins.mapAttrs (n: v: { name = v.matchConfig.Name; bridge = v.networkConfig.Bridge; }) (builtins.filterAttrs (n: v: builtins.match "50-router-.*" n != null) x)'
+            --apply 'x: { wan = x."50-router-wan".networkConfig.Bridge; lan = x."50-router-lan".networkConfig.Bridge; }'
 
       - name: Build test-nixos-host (dry-run)
         run: |
