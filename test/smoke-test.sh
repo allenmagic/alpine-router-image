@@ -348,9 +348,14 @@ boot_ch() {
     log "复制镜像到临时文件（避免污染缓存）..."
     cp "$img" "$scratch"
     # 注：CH 把终端置 raw 模式透传串口输入，Ctrl+C 会作为字节发进 guest
-    # 而非 SIGINT 给 CH——退出方式：guest 内登录后 poweroff，或另开终端
-    # pkill -f cloud-hypervisor。交互验证首选 qemu 路径（Ctrl-A X 退出）。
-    log "cloud-hypervisor 启动 ${distro}（与生产同参数；串口直连 ttyS0；退出：guest 内 poweroff 或另开终端 pkill）"
+    # 而非 SIGINT 给 CH。guest 内 poweroff/halt 也退不出 VMM（实测：ACPI
+    # S5 无仿真 → init 存活重拉 getty；halt → guest 冻结但 CH 不响应
+    # KVM 关机退出）。退出方式（另开终端）：
+    #   ch-remote --api-socket /tmp/router-vm-smoke.sock shutdown-vmm
+    #   （或 pkill -f cloud-hypervisor）。交互验证首选 qemu 路径（Ctrl-A X）。
+    local api_sock="/tmp/router-vm-smoke.sock"
+    rm -f "$api_sock"
+    log "cloud-hypervisor 启动 ${distro}（与生产同参数；串口直连 ttyS0；退出：另开终端 ch-remote --api-socket $api_sock shutdown-vmm）"
     $CH_PREFIX "$ch" \
         --kernel "$(_kernel_path)" \
         --cmdline "$KCMD" \
@@ -358,7 +363,8 @@ boot_ch() {
         --cpus boot=2 \
         --memory size=512M \
         --serial tty \
-        --console off
+        --console off \
+        --api-socket "$api_sock"
     local rc=$?
     rm -f "$scratch"
     return $rc
