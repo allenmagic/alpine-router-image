@@ -11,26 +11,27 @@ check_rootfs() {
     # ---------- 1. 关键二进制（在 TARGET_ROOTFS 内查找）----------
     _check_bin() { _b_="$1"; shift
         for _p_ in "$@"; do
-            if [ -x "${TARGET_ROOTFS}$
-_check_ca_certs() {
-    # CA 证书 bundle：tailscaled/cloudflared（Go）TLS 握手的系统信任根。
-    # 包清单显式声明 ca-certificates-bundle / app-misc/ca-certificates——
-    # 曾靠 curl 依赖顺带拉入，curl 移除后必须独立存在
-    if [ -f /etc/ssl/certs/ca-certificates.crt ]; then
-        echo "  ✓ ca-certificates.crt（TLS 信任根）"
-        _OK=$((_OK + 1))
-    else
-        echo "  ✗ /etc/ssl/certs/ca-certificates.crt 缺失!" >&2
-        _FAIL=$((_FAIL + 1))
-    fi
-}
-
-{_p_}" ]; then
+            if [ -x "${TARGET_ROOTFS}${_p_}" ]; then
                 echo "  ✓ $_b_"; _OK=$((_OK + 1)); return 0
             fi
         done
         echo "  ✗ $_b_ 缺失!"; _FAIL=$((_FAIL + 1))
     }
+
+    _check_ca_certs() {
+        # CA 证书 bundle：tailscaled/cloudflared（Go）TLS 握手的系统信任根。
+        # 包清单显式声明 app-misc/ca-certificates——曾靠 curl 依赖顺带拉入，
+        # curl 移除后必须独立存在。gentoo 链目标在 TARGET_ROOTFS 下
+        # （stage3 自身的 bundle 不代表目标镜像）
+        if [ -f "${TARGET_ROOTFS}/etc/ssl/certs/ca-certificates.crt" ]; then
+            echo "  ✓ ca-certificates.crt（TLS 信任根）"
+            _OK=$((_OK + 1))
+        else
+            echo "  ✗ ${TARGET_ROOTFS}/etc/ssl/certs/ca-certificates.crt 缺失!" >&2
+            _FAIL=$((_FAIL + 1))
+        fi
+    }
+
     echo "[check] 二进制:"
     _check_bin busybox  /bin/busybox
     _check_bin sshd     /usr/sbin/sshd
