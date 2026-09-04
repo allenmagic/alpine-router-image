@@ -417,6 +417,18 @@ echo "[setup]   已写 /etc/profile.env（登录 PATH）"
 
 echo "[setup] 设置主机名：${HOSTNAME_VAL}"
 echo "${HOSTNAME_VAL}" > "${TARGET_ROOTFS}/etc/hostname"
+
+# 发行版标识：deploy 的 install.sh 用 /etc/gentoo-release 判定发行版
+# （install.sh: 非 alpine/gentoo 拒跑）。stage3 自带的 /etc/gentoo-release
+# 与 /etc/os-release 可能在裁剪/重装 /etc 时丢失（2026-09 实测 gentoo 镜像
+# 两者皆无，导致 deploy 报「仅支持 Alpine / Gentoo」），此处显式重建。
+echo "[setup] 重建发行版标识文件"
+echo "Gentoo Router VM" > "${TARGET_ROOTFS}/etc/gentoo-release"
+cat > "${TARGET_ROOTFS}/etc/os-release" <<'OSREL'
+NAME="Gentoo Router VM"
+ID=gentoo
+PRETTY_NAME="Gentoo Router VM (router-image)"
+OSREL
 # Gentoo 的 hostname 服务读 conf.d/hostname（hostname="..." 格式），
 # 仅写 /etc/hostname（Alpine 习惯）在 Gentoo 上不生效
 echo "hostname=\"${HOSTNAME_VAL}\"" > "${TARGET_ROOTFS}/etc/conf.d/hostname"
