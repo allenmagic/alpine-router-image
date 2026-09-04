@@ -434,6 +434,9 @@ fi
 
 # 确保串口控制台 — 直接覆盖（不用 stage3 自带的 inittab）
 # id 字段必须 ≤4 字符，sysvinit 限制；S2 = serial-2（ttyS0）
+# getty 用 busybox applet（/sbin/getty）：util-linux 已于包审计移除，
+# 它的 /sbin/agetty 不存在，busybox 的链接名是 getty（Alpine 链则叫
+# agetty，两链命名不同）
 cat > "${TARGET_ROOTFS}/etc/inittab" <<EOF
 id:3:initdefault:
 si::sysinit:/sbin/openrc sysinit
@@ -441,7 +444,7 @@ rc::bootwait:/sbin/openrc boot
 d3::wait:/sbin/openrc default
 l0:0:wait:/sbin/openrc shutdown
 l6:6:wait:/sbin/openrc reboot
-S2::respawn:/sbin/agetty ${SERIAL_BAUD} ${SERIAL_DEV} vt100
+S2::respawn:/sbin/getty ${SERIAL_BAUD} ${SERIAL_DEV} vt100
 EOF
 
 echo "[setup] 启用基础服务 ..."
@@ -462,6 +465,19 @@ rm -f "${TARGET_ROOTFS}"/etc/runlevels/*/modules \
       "${TARGET_ROOTFS}/etc/init.d/modules" \
       "${TARGET_ROOTFS}/etc/modules" 2>/dev/null || true
 rm -f "${TARGET_ROOTFS}"/etc/modules-load.d/*.conf 2>/dev/null || true
+
+# hwclock 服务删除（2026-09）：CH 不模拟 CMOS RTC，stage3 把 hwclock 注册
+# 进 boot runlevel，每次启动必打 "Failed to set the system clock [ !! ]"。
+# 时间链 = kvm-clock（开机即宿主时间）+ ntpd 常驻校准，不依赖 RTC。
+# qemu 冒烟路径有 mc146818，由 ntpd 的 start_pre 直接 hwclock --hctosys
+# 恢复，无需该服务。osclock/swclock 是软时钟变体（写文件落盘），
+# ro 无状态镜像下同样无用，三件套一并删除
+rm -f "${TARGET_ROOTFS}"/etc/runlevels/*/hwclock \
+      "${TARGET_ROOTFS}"/etc/runlevels/*/swclock \
+      "${TARGET_ROOTFS}"/etc/runlevels/*/osclock \
+      "${TARGET_ROOTFS}"/etc/init.d/hwclock \
+      "${TARGET_ROOTFS}"/etc/init.d/swclock \
+      "${TARGET_ROOTFS}"/etc/init.d/osclock 2>/dev/null || true
 
 # 密钥注入（如果需要在目标 rootfs 内注入）
 # 注意：inject-secrets.sh 需要知道目标路径
@@ -511,6 +527,19 @@ ln -s /run/router-vm/tailscale/authkey "${TARGET_ROOTFS}/etc/tailscale/authkey"
 # host key 不靠符号链接（ssh-keygen 的临时文件写同目录，ro 上会失败），
 # 而是 base/ssh/sshd_config.d/state-hostkeys.conf 把 HostKey 指到
 # /run/router-vm/ssh/（sshd-keys 服务生成，每次启动更换）
+
+# musl 动态链接器（2026-09 修复）：包审计删除 sys-apps/baselayout 后，
+# 无人建立 merged-usr 的 /lib → /usr/lib 链接，而 musl ebuild 按合并布局
+# 把 ld-musl 装到 /usr/lib——所有动态二进制的 PT_INTERP 写死
+# /lib/ld-musl-x86_64.so.1（编译期烙入），exec 全部 ENOENT →
+# "No working init found" panic（check.sh 只查二进制存在，查不出断链，
+# 是它放过了这次回归）。直接链接到 libc.so 本体，不经过 /usr/lib 的
+# 二级符号链接，少一层间接
+if [ ! -e "${TARGET_ROOTFS}/lib/ld-musl-x86_64.so.1" ] && \
+   [ -f "${TARGET_ROOTFS}/usr/lib/libc.so" ]; then
+    ln -s ../usr/lib/libc.so "${TARGET_ROOTFS}/lib/ld-musl-x86_64.so.1"
+    echo "[setup]   补 ld-musl 链接: /lib/ld-musl-x86_64.so.1 -> ../usr/lib/libc.so"
+fi
 
 
 # ============================================================

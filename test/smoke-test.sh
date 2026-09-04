@@ -294,12 +294,10 @@ _assert_log() {
     # 模块装载输出；保留该断言仅为捕获意外调用模块装载路径的失败
     _expect_absent 'FATAL: Module'          '有模块名解析失败（非 -q 调用方）'
     _expect_absent 'Function not implemented' '内核缺 syscall（如 CONFIG_FILE_LOCKING 未开）'
-    # hwclock 只在 qemu 路径断言：CH 不模拟 CMOS RTC（设计如此，见
-    # kernel/config.fragment 的 RTC 段），hwclock 报错是 CH 下的预期行为；
-    # qemu 有 mc146818，报错才说明 RTC 驱动链缺失（曾丢过 RTC_INTF_DEV）
-    if [ "$BACKEND" = "qemu" ]; then
-        _expect_absent 'hwclock:'            'RTC 不可用（缺 RTC_CLASS/RTC_DRV_CMOS/RTC_INTF_DEV）'
-    fi
+    # 2026-09：openrc hwclock 服务已从两链删除（CH 无 RTC、必败），启动
+    # 日志不应再出现 "Failed to set the system clock"；RTC 驱动链完整性
+    # （/dev/rtc0，qemu 路径）由 verify-guest.sh 检查
+    _expect_absent 'Failed to set the system clock' 'openrc hwclock 服务残留（应已删除）'
     _expect_absent 'Kernel panic'            '内核 panic'
     _expect_absent 'Unable to mount root'    '根盘挂载失败（virtio_blk/ext4 未 builtin 且无 initrd）'
     _expect_absent 'Read-only file system'   'ro 写点漏处理（有服务写 rootfs 失败）'

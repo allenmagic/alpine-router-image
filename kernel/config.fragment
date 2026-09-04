@@ -255,9 +255,10 @@ CONFIG_HARDENED_USERCOPY=y
 # CONFIG_MODULE_UNLOAD is not set
 
 # ---------- RTC ----------
-# CH 不模拟 CMOS RTC（Alpine 内核在 CH 下同样读不到），时钟由 kvm-clock
-# 提供、chrony 校准。但 qemu 有 mc146818，test/smoke-test.sh 走 qemu：
-# 补上驱动可消掉 openrc `hwclock` 的启动报错，避免日后重复排查
+# CH 不模拟 CMOS RTC，时钟链 = kvm-clock（开机即宿主时间）+ ntpd 常驻
+# 校准；openrc 的 hwclock 服务已随 2026-09 裁剪从两条链删除（必败且
+# 无用）。驱动仍保留：qemu 冒烟路径有 mc146818，verify-guest.sh 查
+# /dev/rtc0 验驱动链完整性，ntpd 的 start_pre 也用它做 hctosys 恢复
 CONFIG_RTC_CLASS=y
 CONFIG_RTC_DRV_CMOS=y
 # RTC_INTF_DEV：创建 /dev/rtcN 字符设备。`default RTC_CLASS` 但 prompt

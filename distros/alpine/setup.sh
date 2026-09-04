@@ -159,6 +159,14 @@ rc-update del modules 2>/dev/null || true
 rm -f /etc/init.d/modules /etc/modules 2>/dev/null || true
 rm -f /etc/modules-load.d/*.conf 2>/dev/null || true
 
+# hwclock 服务删除（2026-09，与 gentoo 链对齐）：CH 不模拟 CMOS RTC，
+# 服务无用且必败。alpine 的 openrc 当前未把它注册进 runlevel（故无启动
+# 报错），rc-update del 是幂等保险——防止未来 openrc 包升级改变注册。
+# 时间链 = kvm-clock + ntpd 常驻校准；qemu 路径由 ntpd start_pre 的
+# hwclock --hctosys 直接恢复
+rc-update del hwclock 2>/dev/null || true
+rm -f /etc/init.d/hwclock /etc/init.d/swclock /etc/init.d/osclock 2>/dev/null || true
+
 # 密钥注入
 [ -x /inject-secrets.sh ] && /bin/sh /inject-secrets.sh
 

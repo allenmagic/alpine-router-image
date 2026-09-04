@@ -33,6 +33,7 @@ check_rootfs() {
     }
 
     echo "[check] 二进制:"
+    _check_bin init     /sbin/init
     _check_bin busybox  /bin/busybox
     _check_bin sshd     /usr/sbin/sshd
     _check_bin dnsmasq  /usr/sbin/dnsmasq /usr/bin/dnsmasq
@@ -41,6 +42,27 @@ check_rootfs() {
     _check_bin cloudflared /usr/local/bin/cloudflared
     _check_bin network-watchdog /usr/local/bin/network-watchdog
     _check_ca_certs
+    # 动态链接器（2026-09 回归的盲区）：-x 查不出 PT_INTERP 断链——
+    # baselayout 移除后 ld-musl 落在 /usr/lib，镜像里所有动态二进制
+    # exec 报 ENOENT → "No working init found" panic，构建检查照样全绿
+    if [ -e "${TARGET_ROOTFS}/lib/ld-musl-x86_64.so.1" ]; then
+        echo "  ✓ ld-musl-x86_64.so.1（动态链接器在位）"
+        _OK=$((_OK + 1))
+    else
+        echo "  ✗ ${TARGET_ROOTFS}/lib/ld-musl-x86_64.so.1 缺失!" >&2
+        _FAIL=$((_FAIL + 1))
+    fi
+    # getty 与 ntp 用户（同为 2026-09 包审计后首次产出镜像才暴露的盲区）：
+    # inittab 依赖 busybox 的 /sbin/getty（util-linux 已删），ntpd 依赖
+    # acct-user/ntp。启动日志断言查不出「到不了 login」这类失败
+    _check_bin getty /sbin/getty
+    if grep -q '^ntp:' "${TARGET_ROOTFS}/etc/passwd" 2>/dev/null; then
+        echo "  ✓ ntp 用户存在（ntpd 的 command_user）"
+        _OK=$((_OK + 1))
+    else
+        echo "  ✗ ${TARGET_ROOTFS}/etc/passwd 无 ntp 用户!" >&2
+        _FAIL=$((_FAIL + 1))
+    fi
 
     # ---------- 2. 配置文件占位符残留 ----------
     _check_no_placeholder() { _f_="$1"

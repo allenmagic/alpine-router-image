@@ -13,6 +13,11 @@
 
 # ========== base ==========
 [pm] sys-apps/busybox
+# ntp 用户：base/init/openrc/ntpd 的 command_user="ntp" 需要（Alpine 由
+# busybox-openrc 预置；Gentoo 走 GLEP 81 acct-user）。2026-09 修复——
+# 此前 ntpd 统一后 gentoo 链从未成功产出过镜像，启动时
+# "user `ntp' not found" 一直潜伏
+[pm] acct-user/ntp
 [pm] acct-group/uucp
 [pm] net-misc/openssh
 [pm] app-misc/ca-certificates
