@@ -20,6 +20,12 @@ export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # ============================================================
 echo "[setup] === 安装系统包（package.list 单段 base）==="
 
+# [dl@] 下载用 curl（_dl_url），但 curl 不进最终镜像（ro guest 无运行期
+# 用途，已从 package.list 移除）——构建期临时安装，下载完成后卸载
+# （与下方 tzdata 同模式）。alpine 链的 chroot 就是镜像本身，
+# 卸载前 curl 必须全程在位。
+apk add --no-cache curl >/dev/null
+
 _PKG_LIST_="/package.list"
 if [ -f "${_PKG_LIST_}" ]; then
     while read -r _line_; do
@@ -55,7 +61,7 @@ fi
 
 # 配置时区
 cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime 2>/dev/null || true
-apk del tzdata 2>/dev/null || true
+apk del tzdata curl 2>/dev/null || true
 
 # ============================================================
 #  2. 部署配置文件
