@@ -56,6 +56,16 @@ check_rootfs() {
     # inittab 依赖 busybox 的 /sbin/getty（util-linux 已删），ntpd 依赖
     # acct-user/ntp。启动日志断言查不出「到不了 login」这类失败
     _check_bin getty /sbin/getty
+    # /var/lock 烙链接（bootmisc 运行期 ln 在 ro 上必报 EROFS，构建检查
+    # 全绿也拦不住——只能烙期保证）
+    if [ -L "${TARGET_ROOTFS}/var/lock" ] && \
+       [ "$(readlink "${TARGET_ROOTFS}/var/lock")" = "/run/lock" ]; then
+        echo "  ✓ /var/lock -> /run/lock（bootmisc 会跳过 ln）"
+        _OK=$((_OK + 1))
+    else
+        echo "  ✗ /var/lock 未烙链接!" >&2
+        _FAIL=$((_FAIL + 1))
+    fi
     if grep -q '^ntp:' "${TARGET_ROOTFS}/etc/passwd" 2>/dev/null; then
         echo "  ✓ ntp 用户存在（ntpd 的 command_user）"
         _OK=$((_OK + 1))

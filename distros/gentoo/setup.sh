@@ -514,6 +514,12 @@ _link_state_dir /root/.ssh          ssh
 rm -rf "${TARGET_ROOTFS}/var/run"
 ln -s /run "${TARGET_ROOTFS}/var/run"
 echo "[setup]   /var/run -> /run"
+# /var/lock：stage3 里不存在，bootmisc 启动时按标准行为 ln -s /run/lock
+# /var/lock 创建（ro 上 ln 失败报 EROFS，2026-09 由 smoke-test 断言逮住）。
+# 构建期烙链接后 bootmisc 检测 -L 跳过；/run/lock 由它在 tmpfs 上创建
+rm -rf "${TARGET_ROOTFS}/var/lock"
+ln -s /run/lock "${TARGET_ROOTFS}/var/lock"
+echo "[setup]   /var/lock -> /run/lock"
 # openrc 运行期 depcache：rc 二进制每次启动确保 /var/cache/rc 存在
 # （ro 上 mkdir 报 EROFS）；链接到 /run/router-vm/rc（run-state 的 RUN_DIRS 有 rc）
 _link_state_dir /var/cache/rc       rc
