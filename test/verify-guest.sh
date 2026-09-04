@@ -93,7 +93,16 @@ _symlink_ok() {
 _symlink_ok /root/.ssh             /run/router-vm/ssh     "SSH authorized_keys"
 _symlink_ok /etc/cloudflared       /run/router-vm/cloudflared "Cloudflared config"
 _symlink_ok /etc/tailscale/authkey /run/router-vm/tailscale/authkey "Tailscale authkey"
-for _d in ssh tailscale cloudflared; do
+# /tmp 必须可写：router-vm-deploy 把 deploy.tar.gz scp 到 guest 的 /tmp，
+# ro rootfs 上 /tmp 若未链到 tmpfs（alpine 链 2026-09 曾漏链）则 scp 报
+# "dest open ...: Failure" 密钥注入全挂。这里直接实测而非只看链接。
+if [ -w /tmp ] && touch /tmp/.vg-test 2>/dev/null; then
+    ok "/tmp 可写（deploy scp 目标就绪）"
+    rm -f /tmp/.vg-test
+else
+    bad "/tmp 不可写 —— deploy scp 到 /tmp 会失败（需链到 /run/router-vm/tmp）"
+fi
+for _d in ssh tailscale cloudflared tmp; do
     [ -d "/run/router-vm/$_d" ] && ok "/run/router-vm/$_d 目录存在（run-state）" || bad "缺 /run/router-vm/$_d（run-state 未建）"
 done
 

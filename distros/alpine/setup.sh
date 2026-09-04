@@ -190,6 +190,10 @@ _link_state_dir /etc/cloudflared    cloudflared
 _link_state_dir /var/lib/misc       misc
 _link_state_dir /var/log            log
 _link_state_dir /var/tmp            tmp
+# /tmp 一并链到 /run/router-vm/tmp（与 gentoo 链对齐）。否则 ro rootfs 上
+# /tmp 只读，router-vm-deploy scp 到 /tmp/router-vm-deploy.tar.gz 会失败
+# （2026-09 实测：alpine 链 deploy 因 /tmp 只读而 Failure）
+_link_state_dir /tmp                tmp
 _link_state_dir /root/.ssh          ssh
 # /etc/tailscale 整体不能链接（config.json 是构建期配置，留在镜像内），
 # 只链接运行期注入的 authkey 文件
