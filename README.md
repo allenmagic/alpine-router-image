@@ -60,7 +60,7 @@ services.router-vm = {
   cpu = 0;                 # isolcpus 独占核（默认 0；vcpu0 pin 到此核）
   vcpus = 2;               # vCPU 总数（默认 2：vcpu0 独占 + 其余动态调度）
   mem = 512;               # guest 内存上限 MB（默认 256）
-  initialBalloonMem = 256; # 初始 balloon MB，128M 对齐（默认 128；0=禁用）
+  initialBalloonMem = 256; # 初始 balloon 充气 MB，128M 对齐（默认 0=不启用；注意会从 mem 里扣）
 
   wanBridge = "br-wan";    # WAN 侧宿主桥（默认 br-wan）
   lanBridge = "br-lan";    # LAN 侧宿主桥（默认 br-lan）

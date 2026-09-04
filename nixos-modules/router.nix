@@ -167,10 +167,17 @@ in
 
     initialBalloonMem = lib.mkOption {
       type = lib.types.ints.unsigned;
-      default = 128;
+      default = 0;
       description = ''
-        初始 balloon 大小（MB，CH 要求 128M 对齐）；宿主 OOM 时自动放气归还。
-        0 = 禁用 balloon。
+        初始 balloon 充气量（MB，CH 要求 128M 对齐）。0 = 不启用 balloon
+        （默认）。
+
+        注意语义：size 是「启动即充气」的量，guest 可用内存 = mem - size。
+        全量服务（含 tailscaled/cloudflared）约需 130-160MB，256MB 总容量
+        下默认充气 128M 会把可用压到 128MB、踩 OOM 线（deflate_on_oom 能
+        放气救场但 OOM killer 往往先动手）。宿主侧「OOM 时充气回收」的
+        方向本模块未实现（microvm 时代有监听器，重构后未移植）——将来
+        实现宿主侧内存回收时再恢复非零默认值。
       '';
     };
 
