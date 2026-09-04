@@ -32,7 +32,8 @@ _dl_url() {
 
     echo "[dl] 下载 ${_bin_} ..."
 
-    # 3 次重试 + 指数退避
+    # 3 次重试 + 指数退避；最后一次失败时输出 curl 真实错误（便于排障，
+    # 否则 -s 静默失败只剩一句「下载失败」）
     _retry_=3
     while [ "${_retry_}" -gt 0 ]; do
         if curl -fsSL "${_url_}" -o "${_tmpdir_}/${_asset_}" 2>/dev/null; then
@@ -42,7 +43,8 @@ _dl_url() {
         [ "${_retry_}" -gt 0 ] && sleep "$(( (3 - _retry_) * 2 ))"
     done
     if [ "${_retry_}" -eq 0 ]; then
-        echo "[dl] 下载 ${_bin_} 失败" >&2
+        echo "[dl] 下载 ${_bin_} 失败，URL: ${_url_}" >&2
+        curl -fsSL "${_url_}" -o /dev/null >&2
         rm -rf "${_tmpdir_}"
         return 1
     fi

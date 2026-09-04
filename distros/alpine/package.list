@@ -19,4 +19,4 @@
 [pm] tailscale
 [pm] keepalived
 [pm] fastfetch
-[dl@https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64] cloudflared
+[dl@https://github.com/cloudflare/cloudflared/releases/download/2026.8.3/cloudflared-linux-amd64] cloudflared
