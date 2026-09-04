@@ -179,21 +179,31 @@ jobs:
           name: kernel-${{ github.run_id }}
           path: kout
 
+      - name: Resolve tag
+        id: tag
+        run: echo "tag=router-vm-$(date +%Y%m%d)" >> "$GITHUB_OUTPUT"
+
       - name: Merge SHA256SUMS
         run: |
           set -euo pipefail
           cp kout/vmlinuz-router kout/config-router dist/
-          # 内核的 SHA256SUMS 只覆盖它自己的两个产物，与发行版的条目一起排序合并
-          sort -k2 dist/SHA256SUMS.* kout/SHA256SUMS > dist/SHA256SUMS
-          rm dist/SHA256SUMS.*
+          # 本次构建产出的条目（内核的 SHA256SUMS 只覆盖它自己的两个产物）
+          sort -k2 dist/SHA256SUMS.* kout/SHA256SUMS > dist/SHA256SUMS.new
+          # 若 tag 已存在（同日单发行版重跑），拉取旧 SHA256SUMS 做并集合并，
+          # 让本次未重建的发行版保留条目——否则单发行版重跑会把它冲掉
+          # （例：gentoo-only 重跑会把 SHA256SUMS 里的 alpine 条目冲没）。
+          if curl -fsSL "https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.tag }}/SHA256SUMS" -o dist/SHA256SUMS.previous; then
+            # 新条目优先：先 new 后 previous，按文件名去重（保留首次出现 = 新值）
+            cat dist/SHA256SUMS.new dist/SHA256SUMS.previous \
+              | awk '!seen[$2]++' | sort -k2 > dist/SHA256SUMS
+          else
+            mv dist/SHA256SUMS.new dist/SHA256SUMS
+          fi
+          rm -f dist/SHA256SUMS.*
           echo "=== 汇总资产 ==="
           ls -la dist/
           echo "=== SHA256SUMS ==="
           cat dist/SHA256SUMS
-
-      - name: Resolve tag
-        id: tag
-        run: echo "tag=router-vm-$(date +%Y%m%d)" >> "$GITHUB_OUTPUT"
 
       - name: Create / Update Release
         uses: softprops/action-gh-release@v3
