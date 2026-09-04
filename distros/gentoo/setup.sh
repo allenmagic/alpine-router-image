@@ -288,9 +288,11 @@ echo "[setup] === ntpd applet 符号链接 ==="
 ln -sf /bin/busybox "${TARGET_ROOTFS}/usr/sbin/ntpd"
 
 # ============================================================
-#  2.6. busybox syslogd / crond OpenRC 服务
+#  2.6. busybox syslogd OpenRC 服务
 # ============================================================
-echo "[setup] === 配置 busybox syslogd / crond ==="
+# 注：crond 不启用——ro 无状态镜像里定时任务只能构建期烙入，而烙入任务与
+# 启用 crond 本来就在同一次 CI 重建里，运行时保留空转守护无意义。
+echo "[setup] === 配置 busybox syslogd ==="
 
 # syslogd init 脚本
 cat > "${TARGET_ROOTFS}/etc/init.d/syslog" <<'INITEOF'
@@ -311,27 +313,6 @@ stop() {
 }
 INITEOF
 chmod 755 "${TARGET_ROOTFS}/etc/init.d/syslog"
-
-# crond init 脚本
-cat > "${TARGET_ROOTFS}/etc/init.d/crond" <<'INITEOF'
-#!/sbin/openrc-run
-description="Busybox cron daemon"
-
-start() {
-    ebegin "Starting crond"
-    start-stop-daemon --start --quiet --background \
-        --make-pidfile --pidfile /run/crond.pid \
-        --exec /bin/busybox -- crond -f -l 0 -L /var/log/crond.log
-    eend $?
-}
-
-stop() {
-    ebegin "Stopping crond"
-    start-stop-daemon --stop --quiet --pidfile /run/crond.pid
-    eend $?
-}
-INITEOF
-chmod 755 "${TARGET_ROOTFS}/etc/init.d/crond"
 
 # 配置时区（timezone-data 是 ROOT= 装进目标 rootfs 的，路径要加 TARGET_ROOTFS 前缀，
 # 否则检查的是 stage3 构建环境里的 /usr/share/zoneinfo，那里没有，时区会落到 UTC）
@@ -513,11 +494,9 @@ echo "[setup]   /var/run -> /run"
 # openrc 运行期 depcache：rc 二进制每次启动确保 /var/cache/rc 存在
 # （ro 上 mkdir 报 EROFS）；链接到 /run/router-vm/rc（run-state 的 RUN_DIRS 有 rc）
 _link_state_dir /var/cache/rc       rc
-# tmpfiles.d 声明的目录（systemd-tmpfiles-setup 已禁用，构建期补齐；
-# /var/spool 含 crond 需要的 cron 子目录）
-mkdir -p "${TARGET_ROOTFS}/srv" \
-         "${TARGET_ROOTFS}/var/spool/cron/crontabs" \
-         "${TARGET_ROOTFS}/var/spool/cron/atjobs"
+# tmpfiles.d 声明的目录（systemd-tmpfiles-setup 已禁用，构建期补齐。
+# 注：crond 已移除，不再需要 /var/spool/cron 子目录）
+mkdir -p "${TARGET_ROOTFS}/srv" "${TARGET_ROOTFS}/var/spool"
 # /etc/tailscale 整体不能链接（config.json 是构建期配置，留在镜像内），
 # 只链接运行期注入的 authkey 文件
 rm -f "${TARGET_ROOTFS}/etc/tailscale/authkey"

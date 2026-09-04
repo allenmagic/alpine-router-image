@@ -21,7 +21,6 @@ enable_router_services() {
     # 查询失败，本地 ssh 同理。而且启动日志里没有任何迹象：服务没跑，自然不报错。
     _enable_service loopback boot
     _enable_service syslog
-    _enable_service crond
     # 网络（base/init/openrc/network：udhcpc + ip 直接配置；与 gentoo 链对齐注册位置）
     _enable_service network
 

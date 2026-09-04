@@ -56,7 +56,6 @@ check_rootfs() {
     echo "[check] openrc 系统服务:"
     _check_openrc bootmisc boot
     _check_openrc syslog default
-    _check_openrc crond default
 
     echo "[check] openrc 应用服务:"
     _check_openrc sshd default
@@ -71,7 +70,7 @@ check_rootfs() {
 
     # ---------- 4. 额外检查：自定义 init 脚本完整性 ----------
     echo "[check] Gentoo 自定义 init 脚本:"
-    for _s_ in ntpd syslog crond; do
+    for _s_ in ntpd syslog; do
         if [ -x "${TARGET_ROOTFS}/etc/init.d/$_s_" ]; then
             echo "  ✓ $_s_"; _OK=$((_OK + 1))
         else

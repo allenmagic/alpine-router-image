@@ -15,7 +15,6 @@ enable_router_services() {
     # host key 在 /run/ssh 生成（依赖 run-state，先于 sshd）
     _enable_service sshd-keys sysinit
     _enable_service syslog
-    _enable_service crond
 
     # --- 网络服务（base/init/openrc/network：udhcpc + ip 直接配置）---
     _enable_service network
