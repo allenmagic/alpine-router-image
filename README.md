@@ -59,8 +59,8 @@ services.router-vm = {
   os = "alpine";           # 客户机发行版：alpine（默认）/ gentoo（均为 musl+OpenRC）
   cpu = 0;                 # isolcpus 独占核（默认 0；vcpu0 pin 到此核）
   vcpus = 2;               # vCPU 总数（默认 2：vcpu0 独占 + 其余动态调度）
-  mem = 512;               # guest 内存上限 MB（默认 512）
-  initialBalloonMem = 256; # 初始 balloon MB，128M 对齐（默认 256；0=禁用）
+  mem = 512;               # guest 内存上限 MB（默认 256）
+  initialBalloonMem = 256; # 初始 balloon MB，128M 对齐（默认 128；0=禁用）
 
   wanBridge = "br-wan";    # WAN 侧宿主桥（默认 br-wan）
   lanBridge = "br-lan";    # LAN 侧宿主桥（默认 br-lan）
