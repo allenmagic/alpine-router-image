@@ -40,14 +40,10 @@ if [ -n "$CUSTOM_MODULES" ] && [ -d "$CUSTOM_MODULES/lib/modules" ]; then
     done
 fi
 
-# ============================================================
-# 引导期自动加载：nf_tables/virtio_net（builtin，modprobe 返回成功）。
-# 保留 /etc/modules 机制是为了 openrc modules 服务的检查语义。
-# ============================================================
-cat >> rootfs/etc/modules <<'MODULES'
-nf_tables
-virtio_net
-MODULES
+# 引导期模块加载清单：已移除（全部 builtin，无需 modprobe；元数据
+# 完整性由 test/verify-guest.sh 在 guest 内逐项 modprobe 检查）。
+# openrc 的 modules 服务保留但清单为空——若元数据目录与 uname -r 不匹配，
+# kmod 会尝试真插入并报 "Module already in kernel"（旧清单时代的噪音）。
 
 # 启用 ttyS0 getty（setup.sh 已追加，此 sed 为幂等安全网）
 sed -i 's|^#ttyS0:|ttyS0:|' rootfs/etc/inittab
