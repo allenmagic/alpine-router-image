@@ -1,18 +1,26 @@
 #!/sbin/openrc-run
 # ============================================================
-# run-state —— 准备运行时状态目录（/run 下，tmpfs 易失）
+# run-state —— 准备运行时状态目录（/run/router-vm 下，tmpfs 易失）
 #
 # 架构：guest 完全无状态。持久化数据（ssh key / tailscale authkey /
 # cloudflared token 等纯文本）由宿主 sops-nix 管理、deploy 时经
-# scp 注入 /run；镜像内符号链接（构建期烙入）把传统路径指到 /run。
+# scp 注入 /run；镜像内符号链接（构建期烙入）把传统路径指到
+# /run/router-vm/<子目录>。
 #
-# 本服务只负责：保证 /run 下的目标目录存在、属主正确，
+# 状态统一挂在 /run/router-vm/ 单根下（不散落在 /run 顶层）：
+# 审计 guest 全部可变状态 = ls /run/router-vm；/run 顶层留给系统
+# 自身（openrc svcdir、lock 等）。
+#
+# 本服务只负责：保证 /run/router-vm 下的目标目录存在、属主正确，
 # 让后续服务与 deploy 注入不至于因目录缺失失败。
 # （多数服务 start_pre 自带 mkdir，此处集中准备只为确定性）
 # ============================================================
 
 name=$RC_SVCNAME
-description="Prepare runtime state directories under /run"
+description="Prepare runtime state directories under /run/router-vm"
+
+# 状态根（与宿主侧 /run/router-vm/{console.log,api.sock} 命名对称）
+STATE_ROOT="/run/router-vm"
 
 # 与 setup.sh 烙入的符号链接目标一一对应
 # （rc 是 gentoo 链 openrc depcache 的 /var/cache/rc 目标）
@@ -25,12 +33,13 @@ depend() {
 start() {
     ebegin "Preparing runtime state directories"
     local _rc=0
+    mkdir -p "$STATE_ROOT" || _rc=1
     for _d in $RUN_DIRS; do
-        mkdir -p "/run/$_d" || _rc=1
+        mkdir -p "$STATE_ROOT/$_d" || _rc=1
     done
     # 属主（失败不阻塞）：tailscale/chrony 守护进程降权后需要写自己的目录；
     # ssh 目录保持 root（sshd-keys 以 root 生成）
-    chown tailscale:tailscale /run/tailscale 2>/dev/null || true
-    chown chrony:chrony       /run/chrony   2>/dev/null || true
+    chown tailscale:tailscale "$STATE_ROOT/tailscale" 2>/dev/null || true
+    chown chrony:chrony       "$STATE_ROOT/chrony"   2>/dev/null || true
     eend $_rc
 }

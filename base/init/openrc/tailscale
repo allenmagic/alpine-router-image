@@ -3,7 +3,7 @@
 name=$RC_SVCNAME
 description="Tailscale agent"
 
-pidfile="/var/run/$name.pid"
+pidfile="/run/router-vm/$name.pid"
 
 depend() {
     need net
@@ -12,7 +12,7 @@ depend() {
 }
 
 start_pre() {
-    mkdir -p /var/lib/tailscale /run/tailscale
+    mkdir -p /var/lib/tailscale /run/router-vm/tailscale
 }
 
 start() {

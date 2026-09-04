@@ -28,14 +28,14 @@ start() {
 
     # WAN DHCP（后台常驻，自动续约）
     ip link set "${WAN_IFACE}" up || rc=1
-    udhcpc -i "${WAN_IFACE}" -p "/run/udhcpc-${WAN_IFACE}.pid" >/dev/null 2>&1 &
+    udhcpc -i "${WAN_IFACE}" -p "/run/router-vm/udhcpc-${WAN_IFACE}.pid" >/dev/null 2>&1 &
 
     eend $rc
 }
 
 stop() {
     ebegin "Stopping network"
-    [ -f "/run/udhcpc-${WAN_IFACE}.pid" ] && kill "$(cat "/run/udhcpc-${WAN_IFACE}.pid")" 2>/dev/null
+    [ -f "/run/router-vm/udhcpc-${WAN_IFACE}.pid" ] && kill "$(cat "/run/router-vm/udhcpc-${WAN_IFACE}.pid")" 2>/dev/null
     ip addr flush dev "${WAN_IFACE}" 2>/dev/null
     ip addr flush dev "${LAN_IFACE}" 2>/dev/null
     eend 0

@@ -3,7 +3,7 @@
 name=$RC_SVCNAME
 description="Cloudflare Tunnel"
 
-pidfile="/var/run/$name.pid"
+pidfile="/run/router-vm/$name.pid"
 output_log="/var/log/$name.log"
 error_log="/var/log/$name.log"
 

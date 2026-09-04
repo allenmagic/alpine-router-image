@@ -427,10 +427,10 @@ ln -sf /proc/mounts "${TARGET_ROOTFS}/etc/mtab"
 
 # /etc/resolv.conf：WAN DHCP 的运行期产物，落 tmpfs。默认脚本用 mv
 # 落盘会替换符号链接本体（ro 根上失败），故让 udhcpc 直接写 /run
-ln -sf /run/resolv.conf "${TARGET_ROOTFS}/etc/resolv.conf"
+ln -sf /run/router-vm/resolv.conf "${TARGET_ROOTFS}/etc/resolv.conf"
 if [ -f "${TARGET_ROOTFS}/etc/udhcpc/udhcpc.conf" ]; then
     grep -q '^RESOLV_CONF=' "${TARGET_ROOTFS}/etc/udhcpc/udhcpc.conf" 2>/dev/null \
-        || echo 'RESOLV_CONF=/run/resolv.conf' >> "${TARGET_ROOTFS}/etc/udhcpc/udhcpc.conf"
+        || echo 'RESOLV_CONF=/run/router-vm/resolv.conf' >> "${TARGET_ROOTFS}/etc/udhcpc/udhcpc.conf"
 fi
 
 # fstab：/ 显式声明 ro。stage3 默认 fstab 的 /dev/ROOT 条目带 rw 语义，
@@ -524,15 +524,16 @@ fi
 #  5.5. 运行时目录链接（构建期烙入，必须在所有安装之后）
 # ============================================================
 # ro rootfs 运行期无法创建符号链接，可写目录必须在镜像构建期替换为
-# 指向 /run（tmpfs）的链接。guest 完全无状态：持久化密钥由宿主
-# sops-nix 管理、deploy 时注入 /run（见 docs/refactor-proposal.md §3.3）。
+# 指向 /run/router-vm（tmpfs）的链接。guest 完全无状态：持久化密钥
+# 由宿主 sops-nix 管理、deploy 时注入（见 docs/refactor-proposal.md
+# §3.3）。状态统一挂 /run/router-vm/ 单根，审计 = ls /run/router-vm。
 # 清单与 base/init/openrc/run-state 的 RUN_DIRS 一一对应。
 echo "[setup] === 运行时目录链接 ==="
 _link_state_dir() {
     _sys="${TARGET_ROOTFS}$1"; _rel="$2"
     rm -rf "$_sys"
-    ln -s "/run/$_rel" "$_sys"
-    echo "[setup]   $1 -> /run/$_rel"
+    ln -s "/run/router-vm/$_rel" "$_sys"
+    echo "[setup]   $1 -> /run/router-vm/$_rel"
 }
 _link_state_dir /var/lib/tailscale tailscale
 _link_state_dir /etc/cloudflared    cloudflared
@@ -543,12 +544,14 @@ _link_state_dir /var/tmp            tmp
 _link_state_dir /tmp                tmp
 _link_state_dir /root/.ssh          ssh
 # /var/run：stage3 里是真实目录，bootmisc 启动时尝试迁移内容并 rm（ro 上
-# 报 EROFS）——构建期烙成符号链接后 bootmisc 检测 -L 直接跳过
+# 报 EROFS）——构建期烙成符号链接后 bootmisc 检测 -L 直接跳过。
+# 注意 /var/run 指向 /run 本体而非 /run/router-vm：它是系统级运行目录
+# （openrc 自身的 pidfile 约定），VM 应用状态才归 /run/router-vm
 rm -rf "${TARGET_ROOTFS}/var/run"
 ln -s /run "${TARGET_ROOTFS}/var/run"
 echo "[setup]   /var/run -> /run"
 # openrc 运行期 depcache：rc 二进制每次启动确保 /var/cache/rc 存在
-# （ro 上 mkdir 报 EROFS）；链接到 /run/rc（run-state 的 RUN_DIRS 有 rc）
+# （ro 上 mkdir 报 EROFS）；链接到 /run/router-vm/rc（run-state 的 RUN_DIRS 有 rc）
 _link_state_dir /var/cache/rc       rc
 # tmpfiles.d 声明的目录（systemd-tmpfiles-setup 已禁用，构建期补齐；
 # /var/spool 含 crond 需要的 cron 子目录）
@@ -558,10 +561,10 @@ mkdir -p "${TARGET_ROOTFS}/srv" \
 # /etc/tailscale 整体不能链接（config.json 是构建期配置，留在镜像内），
 # 只链接运行期注入的 authkey 文件
 rm -f "${TARGET_ROOTFS}/etc/tailscale/authkey"
-ln -s /run/tailscale/authkey "${TARGET_ROOTFS}/etc/tailscale/authkey"
+ln -s /run/router-vm/tailscale/authkey "${TARGET_ROOTFS}/etc/tailscale/authkey"
 # host key 不靠符号链接（ssh-keygen 的临时文件写同目录，ro 上会失败），
-# 而是 base/ssh/sshd_config.d/state-hostkeys.conf 把 HostKey 指到 /run/ssh/
-# （sshd-keys 服务在 /run/ssh 生成，每次启动更换）
+# 而是 base/ssh/sshd_config.d/state-hostkeys.conf 把 HostKey 指到
+# /run/router-vm/ssh/（sshd-keys 服务生成，每次启动更换）
 
 
 # ============================================================

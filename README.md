@@ -22,7 +22,7 @@ NixOS 宿主
 │   └── systemd.network          tap → br-wan/br-lan 自动挂桥
 └── guest（ro rootfs，完全无状态）
     ├── 构建期烙入的符号链接（/var/lib/tailscale、/etc/cloudflared、
-    │   /var/log、/root/.ssh … → /run tmpfs）
+    │   /var/log、/root/.ssh … → /run/router-vm tmpfs）
     └── 重启即清空 → 宿主重新 deploy（幂等，操作者无感知）
 ```
 

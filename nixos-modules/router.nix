@@ -18,7 +18,8 @@
 #   - 内核唯一：自建 vmlinuz-router（引导链全 builtin，无 initramfs）
 #   - guest 完全无状态：rootfs 只读挂载（--disk readonly=on），持久化密钥
 #     由宿主 sops-nix 管理（解密到 /run/secrets），router-vm-deploy 在每次
-#     VM 启动后 scp 注入 guest 的 /run（tmpfs），重启即清、重新注入
+#     VM 启动后 scp 注入 guest 的 /run/router-vm（tmpfs；guest 全部可变
+#     状态挂此单根，审计 = ls /run/router-vm），重启即清、重新注入
 #   - 状态目录：/var/lib/router-vm/rootfs-<内容哈希>.qcow2 —— rootfs 的只读
 #     副本。镜像升级 → 哈希路径变化 → ExecStart 变化 → systemd 自动重启 VM；
 #     旧副本保留供 rollback 复用，可手动清理

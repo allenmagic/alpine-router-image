@@ -85,10 +85,10 @@ if pgrep sshd >/dev/null 2>&1; then
 else
     bad "sshd 未运行（deploy 的 scp/ssh 通道会失败）"
 fi
-if [ -f /run/ssh/ssh_host_ed25519_key ]; then
-    ok "host key 已生成（/run/ssh，sshd-keys 服务）"
+if [ -f /run/router-vm/ssh/ssh_host_ed25519_key ]; then
+    ok "host key 已生成（/run/router-vm/ssh，sshd-keys 服务）"
 else
-    bad "缺 /run/ssh host key（sshd-keys 未跑，sshd 无法接受连接）"
+    bad "缺 /run/router-vm/ssh host key（sshd-keys 未跑，sshd 无法接受连接）"
 fi
 _symlink_ok() {
     if [ -L "$1" ] && [ "$(readlink "$1")" = "$2" ]; then
@@ -97,11 +97,11 @@ _symlink_ok() {
         bad "$3：$1 未指向 $2（deploy 写不进 /run）"
     fi
 }
-_symlink_ok /root/.ssh             /run/ssh              "SSH authorized_keys"
-_symlink_ok /etc/cloudflared       /run/cloudflared      "Cloudflared config"
-_symlink_ok /etc/tailscale/authkey /run/tailscale/authkey "Tailscale authkey"
+_symlink_ok /root/.ssh             /run/router-vm/ssh     "SSH authorized_keys"
+_symlink_ok /etc/cloudflared       /run/router-vm/cloudflared "Cloudflared config"
+_symlink_ok /etc/tailscale/authkey /run/router-vm/tailscale/authkey "Tailscale authkey"
 for _d in ssh tailscale cloudflared; do
-    [ -d "/run/$_d" ] && ok "/run/$_d 目录存在（run-state）" || bad "缺 /run/$_d（run-state 未建）"
+    [ -d "/run/router-vm/$_d" ] && ok "/run/router-vm/$_d 目录存在（run-state）" || bad "缺 /run/router-vm/$_d（run-state 未建）"
 done
 
 head_ "服务状态"

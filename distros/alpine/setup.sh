@@ -108,10 +108,10 @@ ln -sf /proc/mounts /etc/mtab
 
 # /etc/resolv.conf：WAN DHCP 的运行期产物，落 tmpfs。默认脚本用 mv
 # 落盘会替换符号链接本体（ro 根上失败），故让 udhcpc 直接写 /run
-ln -sf /run/resolv.conf /etc/resolv.conf
+ln -sf /run/router-vm/resolv.conf /etc/resolv.conf
 if [ -f /etc/udhcpc/udhcpc.conf ]; then
     grep -q '^RESOLV_CONF=' /etc/udhcpc/udhcpc.conf 2>/dev/null \
-        || echo 'RESOLV_CONF=/run/resolv.conf' >> /etc/udhcpc/udhcpc.conf
+        || echo 'RESOLV_CONF=/run/router-vm/resolv.conf' >> /etc/udhcpc/udhcpc.conf
 fi
 
 # ============================================================
@@ -159,15 +159,16 @@ enable_router_services
 #  4.5. 运行时目录链接（构建期烙入，必须在所有安装之后）
 # ============================================================
 # ro rootfs 运行期无法创建符号链接，可写目录必须在镜像构建期替换为
-# 指向 /run（tmpfs）的链接。guest 完全无状态：持久化密钥由宿主
-# sops-nix 管理、deploy 时注入 /run（见 docs/refactor-proposal.md §3.3）。
+# 指向 /run/router-vm（tmpfs）的链接。guest 完全无状态：持久化密钥
+# 由宿主 sops-nix 管理、deploy 时注入（见 docs/refactor-proposal.md
+# §3.3）。状态统一挂 /run/router-vm/ 单根，审计 = ls /run/router-vm。
 # 清单与 base/init/openrc/run-state 的 RUN_DIRS 一一对应。
 echo "[setup] === 运行时目录链接 ==="
 _link_state_dir() {
     _sys="$1"; _rel="$2"
     rm -rf "$_sys"
-    ln -s "/run/$_rel" "$_sys"
-    echo "[setup]   $_sys -> /run/$_rel"
+    ln -s "/run/router-vm/$_rel" "$_sys"
+    echo "[setup]   $_sys -> /run/router-vm/$_rel"
 }
 _link_state_dir /var/lib/tailscale tailscale
 _link_state_dir /etc/cloudflared    cloudflared
@@ -179,10 +180,10 @@ _link_state_dir /root/.ssh          ssh
 # /etc/tailscale 整体不能链接（config.json 是构建期配置，留在镜像内），
 # 只链接运行期注入的 authkey 文件
 rm -f /etc/tailscale/authkey
-ln -s /run/tailscale/authkey /etc/tailscale/authkey
+ln -s /run/router-vm/tailscale/authkey /etc/tailscale/authkey
 # host key 不靠符号链接（ssh-keygen 的临时文件写同目录，ro 上会失败），
-# 而是 base/ssh/sshd_config.d/state-hostkeys.conf 把 HostKey 指到 /run/ssh/
-# （sshd-keys 服务在 /run/ssh 生成，每次启动更换）
+# 而是 base/ssh/sshd_config.d/state-hostkeys.conf 把 HostKey 指到
+# /run/router-vm/ssh/（sshd-keys 服务生成，每次启动更换）
 
 
 # ============================================================

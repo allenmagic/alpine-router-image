@@ -21,14 +21,14 @@ deploy-assets/
 
 生产流程密钥由宿主 sops-nix 管理：加密进 git，激活时解密到
 `/run/secrets`，`router-vm-deploy`（systemd 服务）在**每次 VM 启动后**
-自动 scp 注入 guest 的 `/run`（tmpfs）：
+自动 scp 注入 guest 的 `/run/router-vm`（tmpfs）：
 
 ```bash
 # 宿主侧：无需任何手工操作，VM 重启后密钥自动恢复
 systemctl status router-vm-deploy
 ```
 
-注入路径（guest 无状态，以下均为构建期烙入的符号链接 → `/run`）：
+注入路径（guest 无状态，以下均为构建期烙入的符号链接 → `/run/router-vm`）：
 
 - `SSH_PUBLIC_KEY` → `/root/.ssh/authorized_keys`（deploy 通道本身与日常登录；
   **支持多个 key**：每行一个公钥，如部署机 key + 个人设备 key）
