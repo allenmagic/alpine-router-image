@@ -88,18 +88,22 @@ cloudflared-token: eyJhIjoi...
 VM 启动后自动注入 guest（PartOf router-vm.service，重启 VM 自动重跑）。
 原手工 `alpine-router-deploy` 命令更名为 `router-vm-deploy`（一般不再需要）。
 
-### 5. Tailscale 登录
+### 5. Tailscale 登录（自动）
 
-登录从 deploy 内自动 `tailscale up` 改为**手动触发**（authkey 经 config.json
-的 `file:` 机制被 tailscaled 读取）：
+注入 authkey 后 deploy 自动启动 tailscaled 并后台 `tailscale up` 登录
+（authkey 经 config.json 的 `file:` 机制被读取）。**key 必须是
+「可复用（Reusable）」类型**——guest 无状态，每次重启都重新登录，一次性
+key 第二次注入即失效；建议勾选「Ephemeral」，重启产生的旧节点离线后自动
+移除，避免僵尸节点堆积。设备审批（Device approval）在 Tailscale admin 侧
+处理，或配 ACL auto-approve 全免手。
 
 ```bash
-ssh root@192.168.10.1 'tailscale up'
+ssh root@192.168.10.1 'tailscale status'   # 确认已登录
 ```
 
-每次 VM 重启 = 新节点身份（hostname 固定，管理台可辨；旧节点过期消失）。
-若节点 churn 不可接受，方案预留了「tailscaled.state 单独小状态盘」升级路径
-（见 refactor-proposal §5 风险表）。
+每次 VM 重启 = 新节点身份（hostname 固定，管理台可辨）。若节点 churn 不可
+接受，方案预留了「tailscaled.state 单独小状态盘」升级路径（见
+refactor-proposal §5 风险表）。
 
 ## 迁移后验证
 
@@ -108,7 +112,7 @@ nixos-rebuild switch
 systemctl status router-vm            # VM 运行
 systemctl status router-vm-deploy     # 密钥注入成功
 ssh root@192.168.10.1 'cat /root/.ssh/authorized_keys'   # 已注入
-ssh root@192.168.10.1 'tailscale up'  # 登录 tailscale
+ssh root@192.168.10.1 'tailscale status'  # 自动登录完成（审批在 admin 侧）
 ```
 
 完整验收清单见 `docs/verify-on-nixos.md`（方案 3）。

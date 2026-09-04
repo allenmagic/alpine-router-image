@@ -88,8 +88,8 @@
   #   tailscale-auth-key: tskey-auth-xxxxxxxxxxxxxxxx
   #   cloudflared-token: eyJhIjoi...
   #
-  # Tailscale 登录是手动的（authkey 经 config.json 的 file: 机制被
-  # tailscaled 读取）：ssh root@192.168.10.1 'tailscale up'
+  # Tailscale 自动登录：注入后 deploy 内后台 tailscale up（key 须 reusable，
+  # 建议 Ephemeral；审批在 admin 侧）。确认：ssh root@192.168.10.1 'tailscale status'
   # ============================================================
   # sops.secrets."ssh-public-key" = { sopsFile = ./secrets.yaml; };
   # sops.secrets."tailscale-auth-key" = { sopsFile = ./secrets.yaml; };

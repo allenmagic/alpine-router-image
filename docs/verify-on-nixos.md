@@ -140,8 +140,9 @@ ssh root@192.168.10.1 'dmesg | grep -i "read-only\|ro fs" || echo 无写失败'
 
 # 3. deploy 注入（sops 密钥经符号链接落 /run）
 ssh root@192.168.10.1 'cat /root/.ssh/authorized_keys; cat /etc/tailscale/authkey'
-# tailscale 登录（手动，authkey 经 config.json file: 机制生效）
-ssh root@192.168.10.1 'tailscale up'
+# tailscale 自动登录（注入后 deploy 内后台 tailscale up；key 须 reusable，
+# 建议 Ephemeral——审批/auto-approve 在 Tailscale admin 侧）
+ssh root@192.168.10.1 'tailscale status'
 
 # 4. 镜像升级后状态保留（新架构：状态=密钥，重启即重新注入，无需重新 deploy）
 #    nix flake update → nixos-rebuild switch → 自动重启 VM + 重新 deploy
