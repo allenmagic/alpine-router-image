@@ -49,8 +49,11 @@ fi
 sed -i 's|^#ttyS0:|ttyS0:|' rootfs/etc/inittab
 
 # ============================================================
-# mkfs.ext4（2G 稀疏 → qcow2 compact 后 ≈ 实际内容大小）
+# mkfs.ext4（512M 稀疏 → qcow2 compact 后 ≈ 实际内容大小）
+# rootfs 只读且内容在构建期定型，容量不会运行期增长——512M 约为
+# gentoo（双链中较大者）实际占用的 2 倍，留构建余量即可。
+# 未来镜像内容增长时调大此行。
 # ============================================================
-truncate -s 2G "$OUT_EXT4"
+truncate -s 512M "$OUT_EXT4"
 mkfs.ext4 -q -F -L "${DISTRO}-rootfs" -d rootfs "$OUT_EXT4"
 echo "[assemble-rootfs] 完成"
