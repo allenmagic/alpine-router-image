@@ -24,10 +24,10 @@ STATE_ROOT="/run/router-vm"
 
 # 与 setup.sh 烙入的符号链接目标一一对应
 # （rc 是 gentoo 链 openrc depcache 的 /var/cache/rc 目标）
-RUN_DIRS="tailscale cloudflared ssh misc chrony log tmp rc"
+RUN_DIRS="tailscale cloudflared ssh misc log tmp rc"
 
 depend() {
-    before sshd sshd-keys chronyd busybox-ntpd dnsmasq tailscale cloudflared network-watchdog keepalived network
+    before sshd sshd-keys busybox-ntpd dnsmasq tailscale cloudflared network-watchdog keepalived network
 }
 
 start() {
@@ -37,9 +37,8 @@ start() {
     for _d in $RUN_DIRS; do
         mkdir -p "$STATE_ROOT/$_d" || _rc=1
     done
-    # 属主（失败不阻塞）：tailscale/chrony 守护进程降权后需要写自己的目录；
+    # 属主（失败不阻塞）：tailscale 守护进程降权后需要写自己的目录；
     # ssh 目录保持 root（sshd-keys 以 root 生成）
     chown tailscale:tailscale "$STATE_ROOT/tailscale" 2>/dev/null || true
-    chown chrony:chrony       "$STATE_ROOT/chrony"   2>/dev/null || true
     eend $_rc
 }

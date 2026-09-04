@@ -18,7 +18,7 @@ check_rootfs() {
     echo "[check] 二进制:"
     _check_bin bash
     _check_bin sshd
-    _check_bin chronyd
+    _check_bin ntpd
     _check_bin dnsmasq
     _check_bin nft
     _check_bin tailscaled
@@ -58,7 +58,7 @@ check_rootfs() {
     _check_openrc loopback boot
     _check_openrc network
     _check_openrc sshd
-    _check_openrc chronyd
+    _check_openrc ntpd
     _check_openrc nftables
     _check_openrc dnsmasq
     _check_openrc tailscale

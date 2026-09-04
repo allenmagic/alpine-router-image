@@ -173,7 +173,6 @@ _link_state_dir() {
 _link_state_dir /var/lib/tailscale tailscale
 _link_state_dir /etc/cloudflared    cloudflared
 _link_state_dir /var/lib/misc       misc
-_link_state_dir /var/lib/chrony     chrony
 _link_state_dir /var/log            log
 _link_state_dir /var/tmp            tmp
 _link_state_dir /root/.ssh          ssh

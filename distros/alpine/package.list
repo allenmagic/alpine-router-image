@@ -9,7 +9,6 @@
 
 # ========== base ==========
 [pm] openssh
-[pm] chrony
 [pm] curl
 [pm] bash
 [pm] nano

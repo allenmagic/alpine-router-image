@@ -32,7 +32,7 @@ enable_router_services() {
 
     # 3. 基础应用服务
     _enable_service sshd
-    _enable_service chronyd
+    _enable_service ntpd
 
     # 4. VPN 和隧道服务
     _enable_service tailscale

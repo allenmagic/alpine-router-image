@@ -5,7 +5,7 @@
 #   [pm] <package>                —— emerge 安装（ROOT=${ROOTFS} emerge）
 #   [dl@<url>] <binary_name>      —— 下载 URL 到 /usr/local/bin/<binary_name>
 #
-# 与 alpine 链的包集对齐（同一 VM 服务体系：chrony/keepalived 等），
+# 与 alpine 链的包集对齐（同一 VM 服务体系：ntpd/keepalived 等），
 # 确保 base/ 的 OpenRC 配置体系（init.d/conf.d/runlevels）两发行版通用。
 # tailscale（net-vpn/tailscale，musl 有官方 ebuild）与 cloudflared（静态
 # 二进制）均适配 musl。
@@ -17,7 +17,6 @@
 [pm] acct-group/uucp
 [pm] app-shells/bash
 [pm] net-misc/openssh
-[pm] net-misc/chrony
 [pm] net-misc/curl
 [pm] app-editors/nano
 [pm] sys-apps/kmod

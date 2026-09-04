@@ -302,7 +302,7 @@ start() {
     start-stop-daemon --start --quiet --background \
         --make-pidfile \
         --pidfile /run/busybox-ntpd.pid \
-        --exec /bin/busybox -- ntpd -n -p pool.ntp.org -p ntp.cloudflare.com
+        --exec /bin/busybox -- ntpd -n -p ntp.aliyun.com -p ntp.tencent.com
     eend $?
 }
 
@@ -538,7 +538,6 @@ _link_state_dir() {
 _link_state_dir /var/lib/tailscale tailscale
 _link_state_dir /etc/cloudflared    cloudflared
 _link_state_dir /var/lib/misc       misc
-_link_state_dir /var/lib/chrony     chrony
 _link_state_dir /var/log            log
 _link_state_dir /var/tmp            tmp
 _link_state_dir /tmp                tmp
