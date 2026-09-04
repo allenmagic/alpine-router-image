@@ -45,7 +45,7 @@ let
     };
     gentoo = {
       url = "${releaseBase}/gentoo-rootfs.qcow2";
-      sha256 = "be95c0a19400f17291a8313ccbbe62f7fd296bcef449e25a6ecc963af07f01f1";
+      sha256 = "a1f3742cd2453c10617fa690c0a4cdd63a6fa7d0c30d4690b2469ce7dbf909b4";
     };
   };
 
@@ -54,7 +54,7 @@ let
   # （sync-flake-sha.py 自动完成），release tag 承担版本区分。
   kernel = {
     url = "${releaseBase}/vmlinuz-router";
-    sha256 = "5c2a3b934b0d8141ef22b0b3632b38ad775e4dae955e9605399d7fd38dbf1ce2";
+    sha256 = "a8a7aac3510ed414bc90832d96f68b167d52a5261448859d68cba66c6dd5a32e";
   };
 
   kernelImage = pkgs.fetchurl kernel;
