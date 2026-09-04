@@ -28,7 +28,12 @@ trap 'rm -f "${SCRIPT_DIR}/env"' EXIT
 
 # ---- 预检 ----
 [ "$(id -u)" -eq 0 ] || { echo "[install] 必须以 root 执行" >&2; exit 1; }
-[ -f /etc/alpine-release ] || { echo "[install] 仅支持 Alpine Linux" >&2; exit 1; }
+# musl-openrc 双发行版链（alpine / gentoo），其余发行版拒跑：
+# 密钥注入路径依赖两条链构建期烙入的 /run 符号链接与 openrc 服务名
+if [ ! -f /etc/alpine-release ] && [ ! -f /etc/gentoo-release ]; then
+    echo "[install] 仅支持 Alpine / Gentoo（musl+OpenRC 镜像）" >&2
+    exit 1
+fi
 
 echo "[install] 开始密钥注入..."
 

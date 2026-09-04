@@ -540,6 +540,7 @@ _link_state_dir /var/lib/misc       misc
 _link_state_dir /var/lib/chrony     chrony
 _link_state_dir /var/log            log
 _link_state_dir /var/tmp            tmp
+_link_state_dir /tmp                tmp
 _link_state_dir /root/.ssh          ssh
 # /var/run：stage3 里是真实目录，bootmisc 启动时尝试迁移内容并 rm（ro 上
 # 报 EROFS）——构建期烙成符号链接后 bootmisc 检测 -L 直接跳过
