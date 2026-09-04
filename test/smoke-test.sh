@@ -326,7 +326,7 @@ boot_qemu() {
     log "qemu 启动 ${distro}（ro 根盘与生产同参；串口直连 ttyS0；退出按 Ctrl-A 然后 X）"
     # readonly=on 与生产 --disk readonly=on 对齐：否则 openrc root 服务会按
     # fstab 把 / remount 成 rw，ro 验证失真且污染缓存镜像（替代旧 -snapshot）
-    qemu-system-x86_64 -m 512 -smp 2 \
+    qemu-system-x86_64 -m 256 -smp 2 \
         -kernel "$(_kernel_path)" \
         -append "$KCMD" \
         -drive "file=${ASSETS_DIR}/${distro}-rootfs.qcow2,format=qcow2,if=virtio,readonly=on" \
@@ -361,7 +361,7 @@ boot_ch() {
         --cmdline "$KCMD" \
         --disk "path=$scratch,readonly=on,image_type=qcow2" \
         --cpus boot=2 \
-        --memory size=512M \
+        --memory size=256M \
         --serial tty \
         --console off \
         --api-socket "$api_sock"
@@ -393,7 +393,7 @@ boot_ch_assert() {
         --cmdline "$KCMD" \
         --disk "path=$scratch,readonly=on,image_type=qcow2" \
         --cpus boot=2 \
-        --memory size=512M \
+        --memory size=256M \
         --serial "file=$blog" \
         --console off &
     local ch_pid=$!
@@ -430,7 +430,7 @@ boot_qemu_assert() {
     command -v qemu-system-x86_64 >/dev/null 2>&1 || \
         die "未找到 qemu-system-x86_64（Arch: sudo pacman -S qemu-base）"
     log "qemu 后台启动 ${distro}（-nographic 串口落日志）"
-    qemu-system-x86_64 -m 512 -smp 2 \
+    qemu-system-x86_64 -m 256 -smp 2 \
         -kernel "$(_kernel_path)" \
         -append "$KCMD" \
         -drive "file=${ASSETS_DIR}/${distro}-rootfs.qcow2,format=qcow2,if=virtio,readonly=on" \
