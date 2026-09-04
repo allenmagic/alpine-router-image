@@ -181,7 +181,7 @@ if [ -z "$TAG" ]; then
 fi
 BASE="https://github.com/${REPO_SLUG}/releases/download/${TAG}"
 log "release: ${TAG}（${BASE}）"
-[ -n "$LOCAL_KERNEL" ] && log "本地内核: ${LOCAL_KERNEL}（跳过 release 内核下载与校验；如本地内核带 LOCALVERSION，与 release rootfs 的 /lib/modules 版本串不一致属预期——全 builtin 无运行时影响，verify-guest.sh 会提示）"
+[ -n "$LOCAL_KERNEL" ] && log "本地内核: ${LOCAL_KERNEL}（跳过 release 内核下载与校验；MODULES=n 后 rootfs 无 /lib/modules，本地内核直测无版本耦合）"
 
 # ------------------------------------------------------------
 # 下载与校验
@@ -268,9 +268,9 @@ _kernel_path() {
 #   FILE_LOCKING 丢 → openrc 启动时 flock 全部 "Function not implemented"
 #   SECCOMP 丢     → sshd 每次连接的 privsep 子进程被自己的沙箱打死
 #   RTC_INTF_DEV 丢 → 驱动已绑定但 /dev/rtc0 不存在，hwclock 失败
-# 更麻烦的是 openrc 的 modules 服务用 `modprobe -q` 且在 while 管道里丢弃
-# 返回码——它结构上无法失败，九个模块全 FATAL 也照样打印 [ ok ]。
-# 所以唯一能拦住这类问题的地方是启动日志本身。
+# 2026-09 裁剪后 MODULES=n（modules 服务与 modprobe 已随 kmod 移除），
+# 模块类静默失败通道不复存在；但「片段静默失效」这类风险仍在，
+# 启动日志断言 + verify-guest.sh 双防线不变。
 _assert_log() {
     local log_file="$1" distro="$2" fails=0
     # ANSI 转义会打断 grep 的模式匹配
@@ -290,11 +290,8 @@ _assert_log() {
     }
 
     log "启动日志断言（${distro}）..."
-    # 注：openrc 的 modules 服务用 `modprobe -q`，-q 会完全吞掉
-    # "FATAL: Module xxx not found" —— 启动期九次失败在日志里一个字都没有，
-    # 只有 "Loading modules [ ok ]"。所以模块元数据缺失**无法从启动日志检出**，
-    # 只能靠 test/verify-guest.sh 在 guest 内查 /lib/modules/$(uname -r)。
-    # 这里保留该模式仅为捕获非 -q 调用方（如手工 modprobe、其他服务）的失败。
+    # MODULES=n（2026-09 裁剪）后 guest 内无 modprobe，正常启动不应出现
+    # 模块装载输出；保留该断言仅为捕获意外调用模块装载路径的失败
     _expect_absent 'FATAL: Module'          '有模块名解析失败（非 -q 调用方）'
     _expect_absent 'Function not implemented' '内核缺 syscall（如 CONFIG_FILE_LOCKING 未开）'
     # hwclock 只在 qemu 路径断言：CH 不模拟 CMOS RTC（设计如此，见

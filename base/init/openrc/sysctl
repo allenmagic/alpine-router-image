@@ -1,12 +1,13 @@
 #!/sbin/openrc-run
 # 自定义 sysctl 服务（覆盖 Alpine 默认 /etc/init.d/sysctl）：
-#   - 显式依赖 modules，保证 tcp_bbr/sch_fq/nf_conntrack 等模块已加载后再应用参数
 #   - 用 -e 忽略不存在的键（busybox sysctl 不支持 systemd-sysctl 的 "-" 前缀语法）
+#   - 2026-09 裁剪后内核 MODULES=n（bbr/fq/conntrack 全 builtin），
+#     不再依赖 modules 服务
 
 description="Configure kernel parameters"
 
 depend() {
-    after clock modules
+    after clock
     before bootmisc logger
     keyword -prefix -systemd-nspawn -vserver
 }

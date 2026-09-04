@@ -16,7 +16,6 @@
 [pm] acct-group/uucp
 [pm] net-misc/openssh
 [pm] app-misc/ca-certificates
-[pm] sys-apps/kmod
 [pm] sys-apps/iproute2
 [pm] sys-libs/timezone-data
 [pm] sys-apps/openrc

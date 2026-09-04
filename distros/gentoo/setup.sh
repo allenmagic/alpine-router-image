@@ -456,6 +456,13 @@ echo "[setup] === 启用服务 ==="
 . /service.sh
 enable_router_services
 
+# MODULES=n（2026-09 裁剪）：无 .ko 可装载。stage3 自带 openrc 的 modules
+# 服务与 sys-apps/kmod 包一并移除——builtin 能力不需要运行期 modprobe
+rm -f "${TARGET_ROOTFS}"/etc/runlevels/*/modules \
+      "${TARGET_ROOTFS}/etc/init.d/modules" \
+      "${TARGET_ROOTFS}/etc/modules" 2>/dev/null || true
+rm -f "${TARGET_ROOTFS}"/etc/modules-load.d/*.conf 2>/dev/null || true
+
 # 密钥注入（如果需要在目标 rootfs 内注入）
 # 注意：inject-secrets.sh 需要知道目标路径
 if [ -x /inject-secrets.sh ]; then

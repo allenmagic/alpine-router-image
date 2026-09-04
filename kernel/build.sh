@@ -5,7 +5,8 @@
 # 本内核是路由 VM 的唯一内核（重构后不再有 Alpine 官方 virt 变体）：
 #   - 引导链全 builtin（ext4/virtio_blk/virtio_net…）→ 无需 initramfs，
 #     cloud-hypervisor 直接 --kernel 引导（kernel + rootfs 两件套）
-#   - 不产 modloop：rootfs 无需 unsquashfs + 依赖闭包拷贝
+#   - MODULES=n：0 个 .ko、无 /lib/modules 元数据，rootfs 侧已同步移除
+#     kmod 包与 openrc modules 服务（2026-09 裁剪审计）
 #   - 同时产出 bzImage 与 vmlinux（ELF）：CH 按文件头识别 bzImage；
 #     vmlinux 是将来切 PVH 的零成本后路（它本就是 bzImage 的前置产物），
 #     故构建但不发布
@@ -108,37 +109,18 @@ make -C "$SRC_DIR" O="$BUILD_DIR" -j"$JOBS" bzImage vmlinux
 # （router-vm-YYYYMMDD）已经承担了版本区分——把内核版本写进资产名
 # 会让每次 point release bump 都要手改 router.nix 的 url，
 # sync-flake-sha.py 的锚定正则也会失配。版本可从 config-router 内容与
-# guest 的 uname -r 查得，rootfs 里的 /lib/modules/<版本串> 也仍带版本。
+# guest 的 uname -r 查得。
 KREL="$(make -C "$SRC_DIR" O="$BUILD_DIR" -s kernelrelease)"
 log "内核版本串: $KREL"
 
 mkdir -p "$OUT_DIR"
+# MODULES=n 后已不产模块元数据；清掉旧构建残留（裁剪审计前的 out/modules）
+rm -rf "$OUT_DIR/modules"
 cp "$BUILD_DIR/arch/x86/boot/bzImage" "$OUT_DIR/vmlinuz-router"
 cp "$BUILD_DIR/vmlinux" "$OUT_DIR/vmlinux-router"
 cp "$BUILD_DIR/.config" "$OUT_DIR/config-router"
 
-# ---------- 5. 模块元数据 ----------
-# 本配置 0 个 =m，`modules_install` 会因缺 modules.order 直接失败（此前被
-# `|| true` 吞掉，产出 0 文件）。引导链全 builtin 不需要 .ko，但仍必须给
-# rootfs 一份 /lib/modules/$KREL 元数据，否则 modprobe 报
-#   FATAL: Module nf_tables not found in directory /lib/modules/$KREL
-# 而 openrc 的 modules 服务用 `modprobe -q` 且在 while 管道里丢弃返回码，
-# 于是照样打印 [ ok ] —— 失败完全静默。
-# depmod 只需 modules.builtin + modules.builtin.modinfo 即可生成
-# modules.builtin.bin / modules.builtin.alias.bin（modprobe 判定 builtin 的
-# 索引），产物约 108K。缺 modules.order 只是一条 warning。
-# 实测：运行时真正必需的只有 modules.builtin.bin（2954 字节），且 modprobe
-# 只认 basename、不校验路径。仍装全套——挑装要自行判断哪些运行时必需，而
-# 108K 对 155M 镜像是 0.07%，省下的 105K 换不来任何东西。
-rm -rf "$OUT_DIR/modules"
-MODDIR="$OUT_DIR/modules/lib/modules/$KREL"
-mkdir -p "$MODDIR"
-cp "$BUILD_DIR/modules.builtin" "$BUILD_DIR/modules.builtin.modinfo" "$MODDIR/"
-depmod -b "$OUT_DIR/modules" "$KREL" 2>/dev/null
-[ -f "$MODDIR/modules.builtin.bin" ] || die "depmod 未生成 modules.builtin.bin"
-log "模块元数据: $(du -sh "$MODDIR" | cut -f1)（builtin 项 $(wc -l < "$MODDIR/modules.builtin") 个，0 个 .ko）"
-
-# ---------- 6. 校验和 ----------
+# ---------- 5. 校验和 ----------
 # vmlinux 不入 SHA256SUMS：当前 CH 走 bzImage 路径不消费它，它只是将来切 PVH
 # 的后路与宿主侧 gdb/crash 的符号来源，无需作为 release 资产发布
 (cd "$OUT_DIR" && sha256sum vmlinuz-router config-router > SHA256SUMS)

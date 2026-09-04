@@ -2,10 +2,13 @@
 # guest 内自检：验证内核能力与镜像装配的正确性
 #
 # 为什么需要它而不是只看启动日志：启动日志能证明「没崩」，证明不了「能力完整」。
-# 最典型的是 openrc 的 modules 服务——它用 `modprobe -q` 且在 while 管道里丢弃
-# 返回码，-q 会完全吞掉 "FATAL: Module not found"。所以九个模块全部加载失败时，
-# 日志里只有 "Loading modules [ ok ]"，一个字的错误都没有。这类问题**只能**在
-# guest 内查状态才能发现。
+# 历史教训是 openrc modules 服务用 `modprobe -q` 静默吞掉所有模块加载失败；
+# 2026-09 裁剪审计后内核 MODULES=n（全 builtin、无 /lib/modules、无 modprobe），
+# 那个静默失败通道不复存在，但「片段静默失效 = 能编译不能干活的残缺内核」
+# 的风险仍在——builtin 能力只能在这里逐项验证。
+#
+# 判定方法：builtin 代码同样在 /sys/module/<名> 注册目录（SYSFS=y），
+# 比 modprobe 返回码更直接——不依赖任何用户态工具（kmod 包已删）。
 #
 # 用法（smoke-test 启动后登录 root/root，粘贴到串口）：
 #   sh /root/verify-guest.sh
@@ -21,34 +24,24 @@ ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; }
 bad()  { printf '  \033[31m✗\033[0m %s\n' "$1"; FAILS=$((FAILS + 1)); }
 head_() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
-head_ "内核与模块元数据"
+head_ "内核 builtin 能力（MODULES=n，/sys/module 判定）"
 KREL="$(uname -r)"
 ok "内核版本: $KREL"
-if [ -d "/lib/modules/$KREL" ]; then
-    ok "/lib/modules/$KREL 存在"
-    # modprobe 对 builtin 项返回 0 的前提是 modules.builtin.bin 存在
-    if [ -f "/lib/modules/$KREL/modules.builtin.bin" ]; then
-        ok "modules.builtin.bin 存在（modprobe 可判定 builtin）"
-    else
-        bad "缺 modules.builtin.bin —— modprobe 对 builtin 项会报 FATAL"
-    fi
+if [ -e /proc/modules ]; then
+    NMOD="$(wc -l < /proc/modules)"
+    [ "$NMOD" -eq 0 ] && ok "零可装载模块（/proc/modules 空，符合 MODULES=n）" \
+                      || bad "/proc/modules 有 ${NMOD} 行——MODULES=n 预期为 0"
 else
-    bad "缺 /lib/modules/$KREL —— /etc/modules 与 modules-load.d 的项全部会失败"
-    echo "      实际存在的模块目录: $(ls -1 /lib/modules/ 2>/dev/null | tr '\n' ' ')"
+    bad "缺 /proc/modules（MODULES=n 时也应存在空文件）"
 fi
-
-head_ "入口模块可解析（/etc/modules + modules-load.d 的实际内容）"
-# 不硬编码清单：从镜像内配置读取，改配置自动跟随
-ENTRIES="$(cat /etc/modules 2>/dev/null; cat /etc/modules-load.d/*.conf 2>/dev/null | grep -v '^#')"
-for m in $ENTRIES; do
-    if modprobe "$m" 2>/dev/null; then
-        ok "modprobe $m"
-    else
-        bad "modprobe $m 失败（builtin 也应返回 0，缺元数据才会失败）"
-    fi
+# 引导链与路由器能力的关键 builtin——任一项缺失都意味着 config 片段
+# 静默失效（allnoconfig 把带 prompt 的符号置 n 的同类事故，见 config.fragment 注释）
+for _m in virtio_blk virtio_net virtio_balloon ext4 tun \
+          nf_tables nf_conntrack nf_nat; do
+    [ -d "/sys/module/$_m" ] && ok "builtin: $_m" || bad "缺 builtin $_m"
 done
 
-head_ "功能判据（比 modprobe 返回码更可信：直接查能力是否真的在）"
+head_ "功能判据（直接查能力是否真的在，不依赖模块工具）"
 nft list tables >/dev/null 2>&1 && ok "nftables 可用" || bad "nftables 不可用"
 [ -c /dev/net/tun ] && ok "/dev/net/tun 存在（tailscale 依赖）" || bad "缺 /dev/net/tun"
 [ -c /dev/rtc0 ] && ok "/dev/rtc0 存在（缺 RTC_INTF_DEV 会没有）" || bad "缺 /dev/rtc0"
@@ -107,8 +100,7 @@ done
 head_ "服务状态"
 CRASHED="$(rc-status --crashed 2>/dev/null)"
 [ -z "$CRASHED" ] && ok "无崩溃服务" || bad "崩溃服务: $CRASHED"
-NLOADED="$(lsmod 2>/dev/null | tail -n +2 | wc -l)"
-echo "  已加载模块数: $NLOADED（自建内核全 builtin 时为 0）"
+echo "  /proc/modules 行数: $(wc -l < /proc/modules 2>/dev/null)（MODULES=n 时为 0）"
 
 head_ "结果"
 if [ "$FAILS" -eq 0 ]; then

@@ -3,9 +3,9 @@
 # 镜像装配：rootfs → 可启动 VM 根磁盘（两件套：kernel + rootfs）
 #
 # 重构后（剥离 microvm + 单一自建内核）：
-#   - 内核由 kernel/build.sh 自建（全 builtin、无 initramfs），
+#   - 内核由 kernel/build.sh 自建（全 builtin、无 initramfs、MODULES=n），
 #     资产 vmlinuz-router 产在 kernel/out/，本脚本不重复处理
-#   - 本脚本只做 rootfs：注入自建内核的模块元数据 → mkfs.ext4 → qcow2
+#   - 本脚本只做 rootfs：mkfs.ext4 → qcow2
 #   - cloud-hypervisor 直接 --kernel + --disk 引导，无 initrd
 #
 # 用法：
@@ -21,12 +21,6 @@ ROOTFS_TARBALL="$(readlink -f "${1:?用法: assemble.sh <rootfs-tarball> [output
 OUT_DIR="$(readlink -f "${2:-dist}")"
 DISTRO="${3:-alpine}"   # rootfs 发行版（决定 rootfs asset 命名）
 
-# 自建内核（kernel/build.sh 产物）的模块元数据树。缺省取
-# kernel/out/modules——CI 里由独立的 kernel 作业产出后 fan-in 到此。
-# 全 builtin、0 个 .ko，但缺它 openrc modules 服务对 /etc/modules 的
-# 每一项都报 FATAL（modprobe -q 吞掉错误，日志静默失败）。
-CUSTOM_MODULES="${CUSTOM_MODULES:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/kernel/out/modules}"
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 mkdir -p "$OUT_DIR"
 WORK="$(mktemp -d)"
@@ -34,12 +28,12 @@ trap 'rm -rf "$WORK"' EXIT
 
 # ---------- 1. rootfs 装配（须 root/fakeroot：tar 内 uid 0 属主必须保留，
 #               否则镜像里 /var/empty 归属错误，sshd 拒绝启动） ----------
-echo "[assemble] rootfs：注入自建内核元数据 + 装配 ext4 ..."
+echo "[assemble] rootfs：装配 ext4 ..."
 if [ "$(id -u)" -eq 0 ]; then
-    bash "$SCRIPT_DIR/assemble-rootfs.sh" "$ROOTFS_TARBALL" "$WORK/rootfs.ext4" "$DISTRO" "$CUSTOM_MODULES"
+    bash "$SCRIPT_DIR/assemble-rootfs.sh" "$ROOTFS_TARBALL" "$WORK/rootfs.ext4" "$DISTRO"
 else
     command -v fakeroot >/dev/null 2>&1 || { echo "[assemble] 非 root 环境需要 fakeroot" >&2; exit 1; }
-    fakeroot -- bash "$SCRIPT_DIR/assemble-rootfs.sh" "$ROOTFS_TARBALL" "$WORK/rootfs.ext4" "$DISTRO" "$CUSTOM_MODULES"
+    fakeroot -- bash "$SCRIPT_DIR/assemble-rootfs.sh" "$ROOTFS_TARBALL" "$WORK/rootfs.ext4" "$DISTRO"
 fi
 
 # ---------- 2. qcow2 转换（compact：稀疏 ext4 → 实际内容大小的 qcow2） ----------

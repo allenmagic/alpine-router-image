@@ -4,7 +4,8 @@ name: router-image-build
 # rootfs（musl-openrc 双发行版链）+ 装配可启动 VM 镜像
 # → 汇总上传 release asset，并自动同步 flake 模块的 tag+sha256。
 #
-# 作业顺序：kernel → build（fan-in 内核的模块元数据）→ release
+# 作业顺序：kernel 与 build 完全并行（MODULES=n，rootfs 不再需要内核的
+# 模块元数据注入）→ release
 #
 # 产物（tag: router-vm-YYYYMMDD）：
 #   vmlinuz-router               自建内核（引导链全 builtin、无 initramfs，
@@ -13,8 +14,8 @@ name: router-image-build
 #   config-router                自建内核的 .config（供查阅与复现，消费端不 fetch）
 #   SHA256SUMS                   消费端 fetchurl 的 sha256 来源（多发行版条目）
 #
-# 内核与 rootfs 由同一 tag 一起发布、同批次绑定：内核 bump 必然重建配套 rootfs
-# （模块元数据目录名随 uname -r 变化），故二者不解耦。
+# 内核与 rootfs 由同一 tag 一起发布（同批次资产便于消费端一次 fetch 两件套）；
+# 但二者构建已解耦——guest 内无 /lib/modules，内核 bump 不必重建 rootfs。
 #
 # 注：不使用 CI secrets 注入密钥——密钥由宿主 sops-nix 管理、router-vm-deploy
 # 在部署时注入 guest /run，绝不进入公开 release 产物。
@@ -58,7 +59,7 @@ jobs:
 
   # 自建内核（消费端唯一内核）。与发行版无关，故独立成一个作业而不进
   # distro 矩阵——否则 alpine/gentoo 会各编一遍同样的内核。
-  # 产物被下面的 build 作业 fan-in（注入 rootfs 的模块元数据）并进 release。
+  # 产物直接进 release（rootfs 构建不需要它：MODULES=n，无元数据注入）。
   kernel:
     runs-on: ubuntu-24.04
     steps:
@@ -69,7 +70,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             gcc make bc bison flex libelf-dev libssl-dev perl \
-            xz-utils curl ca-certificates cpio gzip kmod
+            xz-utils curl ca-certificates cpio gzip
 
       # 缓存键含 KVER 与 config.fragment 的哈希：版本或配置一变即失效重编，
       # 否则会拿旧 .config 编出与片段不符的内核（静默丢能力）
@@ -96,12 +97,15 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: kernel-${{ github.run_id }}
-          path: kernel/out/*
+          path: |
+            kernel/out/vmlinuz-router
+            kernel/out/config-router
+            kernel/out/SHA256SUMS
           if-no-files-found: error
           retention-days: 7
 
   build:
-    needs: [ prepare, kernel ]
+    needs: [ prepare ]
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false   # 单一发行版失败不影响其他发行版
@@ -115,15 +119,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             xz-utils file curl ca-certificates wget \
-            cpio gzip squashfs-tools kmod e2fsprogs qemu-utils fakeroot nftables
-
-      # 自建内核的模块元数据（~112K）要注入 rootfs，assemble.sh 默认从
-      # kernel/out/modules 取。内核资产本身由 release 作业直接上传，不经此处。
-      - name: Fetch kernel artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: kernel-${{ github.run_id }}
-          path: kernel/out
+            cpio gzip squashfs-tools e2fsprogs qemu-utils fakeroot nftables
 
       - name: Build rootfs (${{ matrix.distro }} / base / x86_64)
         env:
@@ -175,9 +171,8 @@ jobs:
           merge-multiple: true
           pattern: vm-image-*-${{ github.run_id }}
 
-      # 自建内核资产。放在独立目录再挑文件进 dist：内核 artifact 里还有
-      # modules/ 元数据树（已注入 rootfs，不单独发布）与 vmlinux-router
-      # （当前 CH 走 bzImage 路径不消费它，是将来切 PVH 的后路，不发布）。
+      # 自建内核资产。放在独立目录再挑文件进 dist：vmlinux-router（当前 CH
+      # 走 bzImage 路径不消费它，是将来切 PVH 的后路）不发布。
       - name: Download kernel artifact
         uses: actions/download-artifact@v8
         with:

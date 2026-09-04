@@ -18,15 +18,18 @@ NF_TABLES=m  NF_CONNTRACK=m  TUN=m  TCP_CONG_BBR=m  NET_SCH_FQ=m
 运行时 modprobe、闭包覆盖不到，只能整目录兜底拷 `kernel/net` = 7.0M / 376 个
 `.ko`），以及内核与 modloop 的精确版本耦合。
 
-全 builtin 之后这些统统不需要，装配链只剩「rootfs + qcow2 转换」：
+全 builtin 之后这些统统不需要，装配链只剩「rootfs + qcow2 转换」。
+2026-09 裁剪审计进一步把 MODULES 与虚拟设备死代码清零（CH 只挂
+balloon + 8250 串口，无 rng/vsock/virtio-console），guest 内不再有
+kmod 包、openrc modules 服务与 /lib/modules 目录：
 
-| | 旧（Alpine `linux-virt`） | 自建 |
-|---|---|---|
-| 内核 | 12M | 4.0M |
-| initramfs | 10.3M（注入 ext4） | 无 |
-| 模块 | 7.0M / 376 个 `.ko` | 112K 纯元数据 / 0 个 `.ko` |
-| `=y` / `=m` | 1672 / 896 | 715 / 0 |
-| 构建耗时 | — | 122s @ -j20 |
+| | 旧（Alpine `linux-virt`） | 自建 | 裁剪后 |
+|---|---|---|---|
+| 内核 | 12M | 4.0M | 3.8M |
+| initramfs | 10.3M（注入 ext4） | 无 | 无 |
+| 模块 | 7.0M / 376 个 `.ko` | 112K 纯元数据 / 0 个 `.ko` | 无（MODULES=n） |
+| `=y` / `=m` | 1672 / 896 | 715 / 0 | 678 / 0 |
+| 构建耗时 | — | 122s @ -j20 | — |
 
 代价是 CVE 响应从 Alpine 转到本仓库，靠跟 LTS 缓解（CI 缓存键含 KVER，
 bump 即自动重编）。
@@ -47,8 +50,7 @@ JOBS=8 ./kernel/build.sh           # 覆盖并行度
 ```bash
 test/smoke-test.sh alpine                                   # qemu 交互
 test/smoke-test.sh alpine --backend cloud-hypervisor --assert  # CH 非交互断言
-# 本地内核直通（注意：release rootfs 的 /lib/modules 版本串可能不含本地
-# 内核的 LOCALVERSION 后缀，全 builtin 无运行时影响，verify-guest.sh 会提示）
+# 本地内核直通（rootfs 无 /lib/modules，内核与镜像完全解耦，本地内核可直测）
 test/smoke-test.sh alpine --local-kernel kernel/out/vmlinuz-router --backend cloud-hypervisor --assert
 ```
 
@@ -57,20 +59,18 @@ test/smoke-test.sh alpine --local-kernel kernel/out/vmlinuz-router --backend clo
 | 文件 | 用途 |
 |---|---|
 | `vmlinuz-router` | bzImage。qemu `-kernel` 与 CH `--kernel` 都用它（CH 按文件头识别），是唯一引导路径 |
-| `modules/lib/modules/<版本串>/` | depmod 元数据（modules.builtin.bin 等，~112K），由 `assemble.sh` 注入 rootfs |
 | `config-router` | 完整 `.config`，供查阅与复现（消费端不 fetch） |
 | `vmlinux-router` | ELF。不发布，见下方「vmlinux 的定位」 |
 
 资产名不带版本号：内核只有一个变体，release tag（`router-vm-YYYYMMDD`）已
 承担版本区分。带版本会让每次 point release bump 都要手改 `router.nix` 的 url，
 `sync-flake-sha.py` 的锚定正则也会失配。版本可从 config-router 内容与
-guest 的 `uname -r` 查得，rootfs 里的 `/lib/modules/<版本串>` 也仍带版本。
+guest 的 `uname -r` 查得。
 
 版本串命名：`config.fragment` 的 `CONFIG_LOCALVERSION="-dange-router-vm"`
 （仿 WSL 的 `-microsoft-standard-WSL2`），guest 内 `uname -r` 显示
 `6.18.48-dange-router-vm`。改名只动这一行（前导连字符必须自写）；
-KVER bump 不影响命名。模块元数据目录 `/lib/modules/<KREL>` 随
-`make kernelrelease` 自动跟随。
+KVER bump 不影响命名。
 
 ## 版本策略：只跟最新 LTS
 
@@ -81,8 +81,9 @@ KVER bump 不影响命名。模块元数据目录 `/lib/modules/<KREL>` 随
 bump 步骤：改 `KVER` → 跑一次拿到实际 sha256 填进 `SRC_SHA256` → 跑
 `--config-only` 确认片段仍然全部生效 → 完整构建 + smoke-test `--assert`。
 
-内核与 rootfs 由同一 release tag 一起发布、同批次绑定：模块元数据的目录名是
-`uname -r`，内核 bump 必然重建配套 rootfs，二者不解耦。
+内核与 rootfs 由同一 release tag 一起发布（同批次资产便于消费端一次 fetch
+两件套）；构建已解耦——MODULES=n 后 guest 内无 `/lib/modules`，内核 bump
+不必重建 rootfs（CI 中 kernel 与 build 作业完全并行）。
 
 ## config.fragment 的三类陷阱
 
@@ -103,15 +104,15 @@ bump 步骤：改 `KVER` → 跑一次拿到实际 sha256 填进 `SRC_SHA256` �
 这类问题的共同特征是**能编译、能启动、服务全 `[ ok ]`**。所以真正的防线不是
 穷举符号（做不到），而是 `test/smoke-test.sh --assert` 把启动日志变成断言。
 
-尤其注意 openrc 的 `modules` 服务：它用 `modprobe -q` 且在 `while` 管道里丢弃
-返回码，**结构上无法失败**。而 `-q` 会完全吞掉 `FATAL: Module not found` 这条
-错误消息 —— 九个模块全部加载失败时，启动日志里只有 `Loading modules [ ok ]`，
-一个字的错误都没有。
-
-这意味着模块元数据缺失**连日志断言也检不出来**，只能在 guest 内查状态：
+历史上 openrc 的 `modules` 服务用 `modprobe -q` 且在 `while` 管道里丢弃返回
+码，**结构上无法失败**——九个模块全部加载失败时日志里只有
+`Loading modules [ ok ]`，只能靠 `verify-guest.sh` 在 guest 内逐项 modprobe。
+2026-09 裁剪后 MODULES=n，该静默失败通道随 modules 服务、kmod 包、
+`/lib/modules` 目录一起移除；verify-guest.sh 改用 `/sys/module/<名>` 判定
+builtin 能力（builtin 代码同样注册 sysfs 目录，且不依赖任何用户态工具）：
 
 ```bash
-sh test/verify-guest.sh    # 查 /lib/modules/$(uname -r) 与逐项 modprobe
+sh test/verify-guest.sh    # 查 /sys/module 下的关键 builtin 能力
 ```
 
 两道防线分工明确：`--assert` 拦启动期可见的失败（缺 syscall、panic、挂不上

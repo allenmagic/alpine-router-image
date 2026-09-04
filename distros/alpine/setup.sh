@@ -153,6 +153,12 @@ echo "[setup] === 启用服务 ==="
 . /service.sh
 enable_router_services
 
+# MODULES=n（2026-09 裁剪）：无 .ko 可装载。openrc 包自带的 modules 服务
+# 与 kmod 包一并移除——builtin 能力不需要运行期 modprobe
+rc-update del modules 2>/dev/null || true
+rm -f /etc/init.d/modules /etc/modules 2>/dev/null || true
+rm -f /etc/modules-load.d/*.conf 2>/dev/null || true
+
 # 密钥注入
 [ -x /inject-secrets.sh ] && /bin/sh /inject-secrets.sh
 

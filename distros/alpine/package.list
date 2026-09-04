@@ -10,7 +10,6 @@
 # ========== base ==========
 [pm] openssh
 [pm] ca-certificates-bundle
-[pm] kmod
 [pm] iproute2
 [pm] tzdata
 [pm] busybox-openrc

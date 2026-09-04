@@ -34,7 +34,6 @@ CONFIG_EVENTFD=y
 CONFIG_SIGNALFD=y
 CONFIG_TIMERFD=y
 CONFIG_SHMEM=y
-CONFIG_AIO=y
 CONFIG_BINFMT_ELF=y
 CONFIG_BINFMT_SCRIPT=y
 CONFIG_PRINTK=y
@@ -89,7 +88,6 @@ CONFIG_UNIX98_PTYS=y
 # CONFIG_VT is not set
 CONFIG_SERIAL_8250=y
 CONFIG_SERIAL_8250_CONSOLE=y
-CONFIG_SERIAL_8250_PCI=y
 # PNP：从 ACPI 表拿串口 IRQ。CH 的 DSDT 把 COM1 的 GSI 声明为非常规值，
 # 关掉 PNP 时 8250 驱动回落到「经典 IRQ 4」假设 → 中断永不触发 →
 # 内核 printk（轮询）正常、用户态 tty 写（中断驱动 TX）永久静默
@@ -99,17 +97,22 @@ CONFIG_SERIAL_CORE=y
 CONFIG_SERIAL_CORE_CONSOLE=y
 
 # ---------- virtio（全 builtin：root 盘/网卡在 initramfs 前就绪） ----------
+# 按 CH 实际挂载的设备收敛（router.nix 命令行只有 balloon + 8250 串口）：
+#   virtio-console 不用（--console off，控制台走 ttyS0/8250，hvc0 不创建）
+#   vsock 不用（部署走 ssh/scp，无 --vsock 设备）
+#   virtio-rng 不用（无 --rng 设备；guest 熵源靠 RDRAND 直通 + 内核抖动）
+# 这三组曾按「virtio 全家桶」声明，2026-09 裁剪审计时确认零消费方
 CONFIG_VIRTIO=y
 CONFIG_VIRTIO_MENU=y
 CONFIG_VIRTIO_PCI=y
 CONFIG_VIRTIO_BLK=y
 CONFIG_VIRTIO_NET=y
 CONFIG_VIRTIO_BALLOON=y
-CONFIG_VIRTIO_CONSOLE=y
-CONFIG_VSOCKETS=y
-CONFIG_VIRTIO_VSOCKETS=y
-CONFIG_HW_RANDOM=y
-CONFIG_HW_RANDOM_VIRTIO=y
+# CONFIG_VIRTIO_CONSOLE is not set
+# CONFIG_VSOCKETS is not set
+# CONFIG_VIRTIO_VSOCKETS is not set
+# CONFIG_HW_RANDOM is not set
+# CONFIG_HW_RANDOM_VIRTIO is not set
 # MMIO 传输 CH 不用，显式关闭（cmdline 设备探测也一并去掉）
 # CONFIG_VIRTIO_MMIO is not set
 
@@ -122,10 +125,7 @@ CONFIG_EXT4_FS=y
 CONFIG_EXT4_USE_FOR_EXT2=y
 CONFIG_JBD2=y
 CONFIG_FS_MBCACHE=y
-CONFIG_CRC16=y
-CONFIG_FS_POSIX_ACL=y
 CONFIG_TMPFS=y
-CONFIG_TMPFS_POSIX_ACL=y
 CONFIG_PROC_FS=y
 CONFIG_PROC_SYSCTL=y
 CONFIG_SYSFS=y
@@ -142,7 +142,6 @@ CONFIG_NET=y
 CONFIG_UNIX=y
 CONFIG_INET=y
 CONFIG_PACKET=y
-CONFIG_SYSVIPC=y
 CONFIG_NETDEVICES=y
 CONFIG_NET_CORE=y
 CONFIG_ETHERNET=y
@@ -153,8 +152,6 @@ CONFIG_SYN_COOKIES=y
 CONFIG_IPV6=y
 CONFIG_RPS=y
 CONFIG_XPS=y
-CONFIG_INET_DIAG=y
-CONFIG_NETLINK_DIAG=y
 
 # ---------- Tailscale：/dev/net/tun（缺失直接 crash） ----------
 CONFIG_TUN=y
@@ -173,8 +170,6 @@ CONFIG_NETFILTER_ADVANCED=y
 # INGRESS：flowtable 的 hook ingress 前置依赖（NF_FLOW_TABLE 要求它）
 CONFIG_NETFILTER_INGRESS=y
 CONFIG_NF_CONNTRACK=y
-CONFIG_NF_CONNTRACK_MARK=y
-CONFIG_NF_CONNTRACK_EVENTS=y
 CONFIG_NF_NAT=y
 CONFIG_NF_NAT_MASQUERADE=y
 CONFIG_NF_TABLES=y
@@ -193,18 +188,23 @@ CONFIG_NFT_REJECT_INET=y
 CONFIG_NFT_LIMIT=y
 CONFIG_NFT_LOG=y
 # 注：NFT_COUNTER 在 6.18 已并入 nf_tables 核心，符号不再存在（勿声明）
-# NFT_FIB 是隐藏符号，由 FIB_IPV4/IPV6 select；FIB_INET 要求两者都在
-CONFIG_NFT_FIB_IPV4=y
-CONFIG_NFT_FIB_IPV6=y
-CONFIG_NFT_FIB_INET=y
 CONFIG_NFT_FLOW_OFFLOAD=y
-CONFIG_NFT_HASH=y
-CONFIG_NFT_NUMGEN=y
-CONFIG_NFT_QUOTA=y
-CONFIG_NFT_SOCKET=y
-CONFIG_NFT_TPROXY=y
+# NETFILTER_NETLINK（nfnetlink 核心）：nft 用户态 API 的通道，必须保留；
+# 其子模块 NETLINK_QUEUE（NFQUEUE）无用户态消费者（无 queue verdict/监听程序）
 CONFIG_NETFILTER_NETLINK=y
-CONFIG_NETFILTER_NETLINK_QUEUE=y
+# 裁剪审计（2026-09）：以下表达式按 base/nftables.d 三个 .nft 的实际规则
+# 收敛——实测只用 meta/ct/limit/log/masquerade/flowtable/reject。fib 零引用
+# （转发策略靠 ifname 集合），socket/tproxy 无规则（90-router.conf 的 tproxy
+# 仅注释），numgen/quota/hash 从未使用
+# CONFIG_NFT_FIB_IPV4 is not set
+# CONFIG_NFT_FIB_IPV6 is not set
+# CONFIG_NFT_FIB_INET is not set
+# CONFIG_NFT_SOCKET is not set
+# CONFIG_NFT_TPROXY is not set
+# CONFIG_NFT_NUMGEN is not set
+# CONFIG_NFT_QUOTA is not set
+# CONFIG_NFT_HASH is not set
+# CONFIG_NETFILTER_NETLINK_QUEUE is not set
 # 只装 nftables（无 iptables 包）——legacy xtables 整体不编
 # CONFIG_NETFILTER_XTABLES is not set
 
@@ -223,6 +223,11 @@ CONFIG_PREEMPT_VOLUNTARY=y
 CONFIG_KERNEL_ZSTD=y
 
 # ---------- 加固（路由器暴露 WAN，低成本项全开） ----------
+# SCHED_CORE：SMT 兄弟线程间的调度隔离（侧信道加固）。default y 被
+# allnoconfig 静默关掉，显式拉回。注：CH 启动时的
+# "Kernel lacks CONFIG_SCHED_CORE" WARN 说的是**宿主**内核（PR_SCHED_CORE
+# 隔离 vCPU 线程），与本行无关（WSL 宿主就没编，实测如此）
+CONFIG_SCHED_CORE=y
 # RELOCATABLE 是 KASLR（RANDOMIZE_BASE）的前置依赖
 CONFIG_RELOCATABLE=y
 CONFIG_RANDOMIZE_BASE=y
@@ -231,7 +236,6 @@ CONFIG_STACKPROTECTOR=y
 CONFIG_STACKPROTECTOR_STRONG=y
 CONFIG_FORTIFY_SOURCE=y
 CONFIG_STRICT_KERNEL_RWX=y
-CONFIG_STRICT_MODULE_RWX=y
 CONFIG_SLAB_FREELIST_RANDOM=y
 CONFIG_SLAB_FREELIST_HARDENED=y
 CONFIG_BUG_ON_DATA_CORRUPTION=y
@@ -243,11 +247,12 @@ CONFIG_HARDENED_USERCOPY=y
 # CONFIG_PROC_KCORE is not set
 
 # ---------- 模块支持 ----------
-# 保留 MODULES=y：引导链已全 builtin，但 rootfs 侧 openrc `modules`
-# 服务与 kmod 仍在（modprobe 对 builtin 项读 modules.builtin 返回成功），
-# 关掉需要连带改 base/ 与两条发行版链，收益不抵风险
-CONFIG_MODULES=y
-CONFIG_MODULE_UNLOAD=y
+# MODULES=n：引导链全 builtin，运行期没有任何 .ko 需要装载。2026-09 裁剪
+# 审计时连带移除两条发行版链的 kmod 包与 openrc modules 服务、build.sh 的
+# depmod 元数据步骤、assemble 的元数据注入（此前的「modprobe 静默失败」
+# 戏法全部随之消失）。STRICT_MODULE_RWX 与 MODULE_UNLOAD 同理失去对象
+# CONFIG_MODULES is not set
+# CONFIG_MODULE_UNLOAD is not set
 
 # ---------- RTC ----------
 # CH 不模拟 CMOS RTC（Alpine 内核在 CH 下同样读不到），时钟由 kvm-clock
