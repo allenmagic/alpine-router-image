@@ -11,7 +11,21 @@ check_rootfs() {
     # ---------- 1. 关键二进制（在 TARGET_ROOTFS 内查找）----------
     _check_bin() { _b_="$1"; shift
         for _p_ in "$@"; do
-            if [ -x "${TARGET_ROOTFS}${_p_}" ]; then
+            if [ -x "${TARGET_ROOTFS}$
+_check_ca_certs() {
+    # CA 证书 bundle：tailscaled/cloudflared（Go）TLS 握手的系统信任根。
+    # 包清单显式声明 ca-certificates-bundle / app-misc/ca-certificates——
+    # 曾靠 curl 依赖顺带拉入，curl 移除后必须独立存在
+    if [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+        echo "  ✓ ca-certificates.crt（TLS 信任根）"
+        _OK=$((_OK + 1))
+    else
+        echo "  ✗ /etc/ssl/certs/ca-certificates.crt 缺失!" >&2
+        _FAIL=$((_FAIL + 1))
+    fi
+}
+
+{_p_}" ]; then
                 echo "  ✓ $_b_"; _OK=$((_OK + 1)); return 0
             fi
         done
@@ -25,6 +39,7 @@ check_rootfs() {
     _check_bin tailscaled /usr/local/bin/tailscaled
     _check_bin cloudflared /usr/local/bin/cloudflared
     _check_bin network-watchdog /usr/local/bin/network-watchdog
+    _check_ca_certs
 
     # ---------- 2. 配置文件占位符残留 ----------
     _check_no_placeholder() { _f_="$1"
