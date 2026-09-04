@@ -302,7 +302,7 @@ start() {
     start-stop-daemon --start --quiet --background \
         --make-pidfile \
         --pidfile /run/busybox-ntpd.pid \
-        --exec /bin/busybox -- ntpd -n -p ntp.aliyun.com -p ntp.tencent.com
+        --exec /bin/busybox -- ntpd -n ${NTPD_OPTS:--N -p ntp.aliyun.com -p ntp.tencent.com}
     eend $?
 }
 
@@ -316,10 +316,11 @@ stop() {
 INITEOF
 chmod 755 "${TARGET_ROOTFS}/etc/init.d/busybox-ntpd"
 
-# conf.d
+# conf.d（唯一配置源：init 脚本读 NTPD_OPTS，与 alpine 链 conf.d/ntpd 同机制）
 cat > "${TARGET_ROOTFS}/etc/conf.d/busybox-ntpd" <<'CONFEOF'
-# NTP 服务器列表
-NTP_SERVERS="pool.ntp.org ntp.cloudflare.com"
+# busybox ntpd 上游：阿里云 + 腾讯 NTP 池（与 dnsmasq 上游 DNS 同源选择；
+# 改上游只动本文件）
+NTPD_OPTS="-N -p ntp.aliyun.com -p ntp.tencent.com"
 CONFEOF
 
 # ============================================================
