@@ -29,6 +29,11 @@
 [pm] net-firewall/nftables
 # keepalived 运行时依赖 libmagic.so.1（MIME 文件检查），需显式装 file 提供
 [pm] sys-apps/file
+# keepalived 的 configure 自动探测 libkmod 并链接（无 --disable-libkmod 开关、
+# ebuild 的 RDEPEND 也未声明），ROOT= 安装不会带入 kmod → 运行期 relocation
+# 失败起不来。MODULES=n 内核下模块工具是死代码，但 libkmod.so.2 是 keepalived
+# 的运行时库，必须补回（仅库，modules 服务仍在 setup.sh 里删除）。
+[pm] sys-apps/kmod
 [pm] sys-cluster/keepalived
 [pm] net-vpn/tailscale
 [dl@https://github.com/cloudflare/cloudflared/releases/download/2026.8.3/cloudflared-linux-amd64] cloudflared
