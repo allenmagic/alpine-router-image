@@ -16,7 +16,6 @@ check_rootfs() {
         fi
     }
     echo "[check] 二进制:"
-    _check_bin bash
     _check_bin sshd
     _check_bin ntpd
     _check_bin dnsmasq

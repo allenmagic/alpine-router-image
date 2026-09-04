@@ -18,7 +18,6 @@ check_rootfs() {
         echo "  ✗ $_b_ 缺失!"; _FAIL=$((_FAIL + 1))
     }
     echo "[check] 二进制:"
-    _check_bin bash     /bin/bash
     _check_bin busybox  /bin/busybox
     _check_bin sshd     /usr/sbin/sshd
     _check_bin dnsmasq  /usr/sbin/dnsmasq /usr/bin/dnsmasq

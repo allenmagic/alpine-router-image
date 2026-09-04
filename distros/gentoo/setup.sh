@@ -54,7 +54,7 @@ shadow:x:997:
 EOF
 
 cat > "${TARGET_ROOTFS}/etc/passwd" <<'EOF'
-root:x:0:0:root:/root:/bin/bash
+root:x:0:0:root:/root:/bin/sh
 EOF
 
 cat > "${TARGET_ROOTFS}/etc/shadow" <<'EOF'
@@ -416,16 +416,12 @@ echo "[setup] 设置 root 密码 ..."
 _hash_="$(openssl passwd -6 "${ROOT_PASSWORD}")"
 sed -i "s|^root:[^:]*:|root:${_hash_}:|" "${TARGET_ROOTFS}/etc/shadow"
 
-echo "[setup] 确认默认 shell 为 bash ..."
-sed -i '/^root:/ s|:[^:]*$|:/bin/bash|' "${TARGET_ROOTFS}/etc/passwd"
-
+# root shell 保持 /bin/sh（busybox）——bash 已从包清单移除（见 package.list
+# 审计结论）。/etc/shells 若不存在则创建（仅含 /bin/sh）
 if [ ! -f "${TARGET_ROOTFS}/etc/shells" ]; then
     cat > "${TARGET_ROOTFS}/etc/shells" <<EOF
 /bin/sh
-/bin/bash
 EOF
-else
-    grep -qx '/bin/bash' "${TARGET_ROOTFS}/etc/shells" 2>/dev/null || echo '/bin/bash' >> "${TARGET_ROOTFS}/etc/shells"
 fi
 
 # 登录环境 PATH：ROOT= emerge 时 baselayout 的 env-update 只作用于 stage3 构建环境，

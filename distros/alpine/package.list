@@ -9,12 +9,9 @@
 
 # ========== base ==========
 [pm] openssh
-[pm] curl
-[pm] bash
-[pm] nano
+[pm] ca-certificates-bundle
 [pm] kmod
 [pm] iproute2
-[pm] util-linux
 [pm] tzdata
 [pm] busybox-openrc
 [pm] dnsmasq

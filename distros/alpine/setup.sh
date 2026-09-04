@@ -122,10 +122,8 @@ echo "[setup] === 系统设置 ==="
 echo "[setup] 设置 root 密码 ..."
 echo "root:${ROOT_PASSWORD}" | chpasswd
 
-echo "[setup] 设置默认 shell 为 bash ..."
-grep -qx '/bin/bash' /etc/shells 2>/dev/null || echo '/bin/bash' >> /etc/shells
-chsh -s /bin/bash root 2>/dev/null || \
-    sed -i '/^root:/ s|:[^:]*$|:/bin/bash|' /etc/passwd
+# root shell 保持默认 ash（busybox）——bash 已从包清单移除（guest 只读、
+# 配置烙入镜像，交互调试 ash 足够；见 package.list 审计结论）
 
 echo "[setup] 设置主机名：${HOSTNAME_VAL}"
 echo "${HOSTNAME_VAL}" > /etc/hostname

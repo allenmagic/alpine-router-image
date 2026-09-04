@@ -13,18 +13,13 @@
 
 # ========== base ==========
 [pm] sys-apps/busybox
-[pm] sys-apps/baselayout
 [pm] acct-group/uucp
-[pm] app-shells/bash
 [pm] net-misc/openssh
-[pm] net-misc/curl
-[pm] app-editors/nano
+[pm] app-misc/ca-certificates
 [pm] sys-apps/kmod
 [pm] sys-apps/iproute2
-[pm] sys-apps/util-linux
 [pm] sys-libs/timezone-data
 [pm] sys-apps/openrc
-[pm] sys-process/procps
 [pm] app-misc/fastfetch
 [pm] net-dns/dnsmasq
 [pm] net-firewall/nftables
