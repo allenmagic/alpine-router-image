@@ -278,50 +278,14 @@ fi
 
 
 # ============================================================
-#  2.5. busybox ntpd OpenRC 服务
+#  2.5. ntpd 服务
 # ============================================================
-echo "[setup] === 配置 busybox ntpd ==="
-
-# init 脚本
-cat > "${TARGET_ROOTFS}/etc/init.d/busybox-ntpd" <<'INITEOF'
-#!/sbin/openrc-run
-description="Busybox NTP daemon"
-
-depend() {
-    use dns
-    after net
-}
-
-start_pre() {
-    # 从 RTC 恢复时间（即使不准确也给一个起点，后续 NTP 纠正）
-    /bin/busybox hwclock --hctosys --utc 2>/dev/null || true
-}
-
-start() {
-    ebegin "Starting ntpd"
-    start-stop-daemon --start --quiet --background \
-        --make-pidfile \
-        --pidfile /run/busybox-ntpd.pid \
-        --exec /bin/busybox -- ntpd -n ${NTPD_OPTS:--N -p ntp.aliyun.com -p ntp.tencent.com}
-    eend $?
-}
-
-stop() {
-    ebegin "Stopping ntpd"
-    start-stop-daemon --stop --quiet --pidfile /run/busybox-ntpd.pid
-    # 关机前同步系统时间到 RTC
-    /bin/busybox hwclock --systohc --utc 2>/dev/null || true
-    eend $?
-}
-INITEOF
-chmod 755 "${TARGET_ROOTFS}/etc/init.d/busybox-ntpd"
-
-# conf.d（唯一配置源：init 脚本读 NTPD_OPTS，与 alpine 链 conf.d/ntpd 同机制）
-cat > "${TARGET_ROOTFS}/etc/conf.d/busybox-ntpd" <<'CONFEOF'
-# busybox ntpd 上游：阿里云 + 腾讯 NTP 池（与 dnsmasq 上游 DNS 同源选择；
-# 改上游只动本文件）
-NTPD_OPTS="-N -p ntp.aliyun.com -p ntp.tencent.com"
-CONFEOF
+# 与 alpine 链共用 base/init/openrc/ntpd（_deploy_cfg_ base 部署）与
+# base/conf.d/ntpd（NTPD_OPTS）——本链只需补 /usr/sbin/ntpd applet
+# 符号链接（gentoo 的 busybox 无 make-symlinks 到 sbin 的 ntpd 链接，
+# 且 check.sh 的 _check_bin ntpd 依赖它；init 脚本本身用 /bin/busybox）
+echo "[setup] === ntpd applet 符号链接 ==="
+ln -sf /bin/busybox "${TARGET_ROOTFS}/usr/sbin/ntpd"
 
 # ============================================================
 #  2.6. busybox syslogd / crond OpenRC 服务

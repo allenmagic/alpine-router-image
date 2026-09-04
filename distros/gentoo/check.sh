@@ -61,7 +61,7 @@ check_rootfs() {
 
     echo "[check] openrc 应用服务:"
     _check_openrc sshd default
-    _check_openrc busybox-ntpd default
+    _check_openrc ntpd
     _check_openrc nftables default
     _check_openrc dnsmasq default
     _check_openrc tailscale default
@@ -72,7 +72,7 @@ check_rootfs() {
 
     # ---------- 4. 额外检查：自定义 init 脚本完整性 ----------
     echo "[check] Gentoo 自定义 init 脚本:"
-    for _s_ in busybox-ntpd syslog crond; do
+    for _s_ in ntpd syslog crond; do
         if [ -x "${TARGET_ROOTFS}/etc/init.d/$_s_" ]; then
             echo "  ✓ $_s_"; _OK=$((_OK + 1))
         else

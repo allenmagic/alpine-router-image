@@ -14,7 +14,6 @@
 [pm] nano
 [pm] kmod
 [pm] iproute2
-[pm] rsync
 [pm] util-linux
 [pm] tzdata
 [pm] busybox-openrc

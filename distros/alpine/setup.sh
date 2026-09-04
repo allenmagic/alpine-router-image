@@ -141,9 +141,6 @@ fi
 sed -i 's/^tty[1-6]:/#&/' /etc/inittab 2>/dev/null || true
 
 echo "[setup] 启用基础服务 ..."
-rc-update add sysctl boot 2>/dev/null || true
-rc-update add local default 2>/dev/null || true
-rc-update add network default 2>/dev/null || true
 
 # ============================================================
 #  4. 启用路由器服务

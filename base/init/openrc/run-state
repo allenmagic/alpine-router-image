@@ -27,7 +27,7 @@ STATE_ROOT="/run/router-vm"
 RUN_DIRS="tailscale cloudflared ssh misc log tmp rc"
 
 depend() {
-    before sshd sshd-keys busybox-ntpd dnsmasq tailscale cloudflared network-watchdog keepalived network
+    before sshd sshd-keys ntpd dnsmasq tailscale cloudflared network-watchdog keepalived network
 }
 
 start() {

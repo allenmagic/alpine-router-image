@@ -29,7 +29,7 @@ enable_router_services() {
 
     # 3. 基础应用服务
     _enable_service sshd
-    _enable_service busybox-ntpd
+    _enable_service ntpd
 
     # 4. VPN 和隧道服务
     _enable_service tailscale
@@ -41,11 +41,16 @@ enable_router_services() {
     # 6. 浮动网关（VRRP）
     _enable_service keepalived
 
-    # 移除 headless 路由器不需要的键盘服务（依赖未安装的 kbd 包）
+    # 移除 headless 路由器不需要的服务：
+    # - keymaps/save-keymaps：依赖未安装的 kbd 包
+    # - termencoding/save-termencoding：终端编码设置需要 /dev/ttyN（无 VT
+    #   内核下报错），无头 VM 无用
     rm -f "${TARGET_ROOTFS}/etc/runlevels/boot/keymaps" \
           "${TARGET_ROOTFS}/etc/runlevels/boot/save-keymaps" \
           "${TARGET_ROOTFS}/etc/runlevels/default/keymaps" \
-          "${TARGET_ROOTFS}/etc/runlevels/default/save-keymaps" 2>/dev/null || true
+          "${TARGET_ROOTFS}/etc/runlevels/default/save-keymaps" \
+          "${TARGET_ROOTFS}/etc/runlevels/boot/termencoding" \
+          "${TARGET_ROOTFS}/etc/runlevels/boot/save-termencoding" 2>/dev/null || true
 
     # ro 无状态 guest 下禁用（stage3 默认启用）：
     # - systemd-tmpfiles-setup(-dev)：运行期 tmpfiles 与「构建期烙入的

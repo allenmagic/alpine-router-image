@@ -22,10 +22,12 @@ enable_router_services() {
     _enable_service loopback boot
     _enable_service syslog
     _enable_service crond
+    # 网络（base/init/openrc/network：udhcpc + ip 直接配置；与 gentoo 链对齐注册位置）
+    _enable_service network
 
     # --- base 应用服务（按依赖顺序）---
     # 1. 防火墙（最先加载）
-    _enable_nftables
+    _enable_service nftables
 
     # 2. 核心网络服务
     _enable_service dnsmasq
@@ -36,7 +38,7 @@ enable_router_services() {
 
     # 4. VPN 和隧道服务
     _enable_service tailscale
-    _enable_cloudflared
+    _enable_service cloudflared
 
     # 5. 监控服务
     _enable_service network-watchdog
@@ -57,14 +59,3 @@ _enable_service() {
     fi
 }
 
-# nftables 开机加载
-_enable_nftables() {
-    echo "[service] 启用 nftables 开机加载 ..."
-    rc-update add nftables default 2>/dev/null || true
-}
-
-# cloudflared 服务启用
-_enable_cloudflared() {
-    echo "[service] 启用 cloudflared ..."
-    rc-update add cloudflared default 2>/dev/null || true
-}

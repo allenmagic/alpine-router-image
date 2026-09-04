@@ -1,0 +1,36 @@
+#!/sbin/openrc-run
+# ============================================================
+# ntpd —— 统一 NTP 服务（alpine/gentoo 双链共用；busybox ntpd = SNTP 客户端）
+#
+# 配置源：/etc/conf.d/ntpd 的 NTPD_OPTS（base/conf.d/ntpd 部署，
+# 双链同文件——改上游只动 base/conf.d/ntpd）。
+# 精度说明：kvm-clock 保证开机时钟大致正确，SNTP 客户端足以满足
+# TLS（tailscale/cloudflared）秒级精度需求。
+# pidfile 与其他自管服务一致落在 /run/router-vm/。
+# ============================================================
+
+description="Busybox NTP daemon (SNTP client)"
+
+command="/bin/busybox"
+command_args="ntpd -n ${NTPD_OPTS:--N -p ntp.aliyun.com -p ntp.tencent.com}"
+command_user="ntp"
+pidfile="/run/router-vm/ntpd.pid"
+command_background=true
+# 降权到 ntp 用户后仍需 set time / bind 端口
+capabilities="^cap_sys_time,^cap_net_bind_service"
+
+depend() {
+    need run-state
+    use dns
+    after net
+}
+
+start_pre() {
+    # 从 RTC 恢复时间（CH 无 CMOS RTC 时无害空转；qemu 路径下有效）
+    /bin/busybox hwclock --hctosys --utc 2>/dev/null || true
+}
+
+stop_post() {
+    # 关机前回写 RTC（CH 下同样空转）
+    /bin/busybox hwclock --systohc --utc 2>/dev/null || true
+}
