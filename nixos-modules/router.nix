@@ -161,7 +161,9 @@ in
 
     mem = lib.mkOption {
       type = lib.types.ints.positive;
-      default = 256;
+      # 2026-09 实测：tailscaled+cloudflared+tailscale 隧道服务 ~120MB、
+      # 系统 ~50MB，工作集 ~170MB 再加 page cache，256M 偏紧；默认 512M 留余量。
+      default = 512;
       description = "guest 内存上限（MB）";
     };
 
