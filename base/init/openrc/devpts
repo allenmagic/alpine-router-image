@@ -1,0 +1,30 @@
+#!/sbin/openrc-run
+# ============================================================
+# devpts —— 挂载 devpts 到 /dev/pts
+#
+# 交互式 SSH（不带远端命令）需要分配 pty：sshd 经 /dev/ptmx +
+# /dev/pts/N 实现，若 /dev/pts 未挂 devpts，连接报 "PTY allocation
+# request failed on channel 0"。命令模式不需要 pty，所以 deploy /
+# smoke-test 一直能通、纯交互却进不去（2026-09 实测）。
+#
+# 精简镜像未自动挂 devpts（无 udev/mdev 全套触发）；/dev 是 devtmpfs
+#（内核管理，只含 /dev/ptmx，不含 /dev/pts 挂载点），须显式挂载。
+# 挂 sysinit 级、先于 sshd。
+# ============================================================
+
+name=$RC_SVCNAME
+description="Mount devpts on /dev/pts"
+
+depend() {
+    before sshd
+}
+
+start() {
+    ebegin "Mounting devpts on /dev/pts"
+    local _rc=0
+    mkdir -p /dev/pts 2>/dev/null || true
+    if ! mountpoint -q /dev/pts 2>/dev/null; then
+        mount -t devpts devpts /dev/pts || _rc=1
+    fi
+    eend $_rc
+}
