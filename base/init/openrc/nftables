@@ -1,0 +1,44 @@
+#!/sbin/openrc-run
+# ============================================================
+# nftables —— 统一加载防火墙规则（覆盖两发行版的发行版服务）
+#
+# 直接 nft -f /etc/nftables.nft（声明式配置，含 flush + include
+# /etc/nftables.d/*.nft）。
+#
+# 覆写原因（2026-09）：gentoo 发行版 nftables 服务是 save-based，
+# 读 NFTABLES_SAVE=/var/lib/nftables/rules-save（conf.d 设死），而本
+# 镜像提供声明式 /etc/nftables.nft，构建时从未生成 rules-save →
+# gentoo 启动 nftables 服务「started」但加载空规则（无 NAT/防火墙，
+# 仅手动 nft -f 生效）。统一改为与 alpine 链一致：直接加载声明式配置。
+# ============================================================
+
+name=$RC_SVCNAME
+description="Load nftables firewall rules from /etc/nftables.nft"
+
+RULES_FILE="/etc/nftables.nft"
+
+depend() {
+    # 顺序与发行版一致：localmount 后、网络 up 前（规则用 ifname set/
+    # flowtable 引用 eth0/eth1，virtio 设备内核初始化即存在，无需等 IP）
+    need localmount
+    after sysctl
+    before net sshd dnsmasq keepalived tailscale cloudflared network-watchdog
+    provide firewall
+}
+
+start() {
+    ebegin "Loading nftables rules from ${RULES_FILE}"
+    nft -f "${RULES_FILE}"
+    eend $?
+}
+
+stop() {
+    # 无状态 guest：ro rootfs 无法 save，停止即清空（重启自动重载）
+    ebegin "Flushing nftables rules"
+    nft flush ruleset
+    eend $?
+}
+
+reload() {
+    start
+}
