@@ -8,6 +8,11 @@ enable_router_services() {
     echo "[service] === 启用路由器服务 ==="
 
     # --- 系统基础服务 ---
+    # sysctl：应用 /etc/sysctl.d/*（含 90-router.conf 的 ip_forward=1）。
+    # 4decfe3 加了 base/init/openrc/sysctl 但漏了接线 → 从未进 runlevel →
+    # ip_forward 干净启动后是 0，NAT/转发全失效（NAS 出网断，仅手动
+    # sysctl/echo 才恢复）。boot 级、bootmisc 前（depend 已声明）。
+    _enable_service sysctl boot
     _enable_service bootmisc boot
     # 运行时状态目录（sysinit：/run 下目录准备，先于一切 default 级服务）
     _enable_service run-state sysinit
