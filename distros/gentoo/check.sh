@@ -38,7 +38,10 @@ check_rootfs() {
     _check_bin sshd     /usr/sbin/sshd
     _check_bin dnsmasq  /usr/sbin/dnsmasq /usr/bin/dnsmasq
     _check_bin nft      /usr/sbin/nft /sbin/nft
-    _check_bin tailscaled /usr/local/bin/tailscaled
+    # tailscale 是 [pm] net-vpn/tailscale（emerge），musl 版装在 /usr/sbin
+    # （与 alpine 链、base/init/openrc/tailscale 一致）；曾误写 /usr/local/bin
+    # （那是 [dl@] cloudflared 的位置），本地构建 check 必失败。
+    _check_bin tailscaled /usr/sbin/tailscaled
     _check_bin cloudflared /usr/local/bin/cloudflared
     _check_bin network-watchdog /usr/local/bin/network-watchdog
     _check_ca_certs
